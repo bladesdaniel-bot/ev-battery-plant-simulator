@@ -1,0 +1,13 @@
+# Dependencies (npm install recreates these)
+node_modules/
+
+# Compiled output (npm run build recreates this)
+build/
+
+# Logs
+npm-debug.log*
+
+# Windows and editor clutter
+Thumbs.db
+desktop.ini
+.vs/

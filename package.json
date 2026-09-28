@@ -1,0 +1,13 @@
+{
+  "name": "ev-battery-plant-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Config-driven EV battery production line simulator with a live dashboard",
+  "scripts": {
+    "build": "node build.js",
+    "test": "tsc -p test && node build/test.js"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}
