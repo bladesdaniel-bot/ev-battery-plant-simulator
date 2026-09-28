@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EV battery plant simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#DADDE0; --panel:#EDEFF1; --ink:#1D2125; --muted:#59616A; --rule:#B7BCC2;
+  --run:#4F5A65; --idle:#C7CBD0; --warn:#C98E0C; --alarm:#C4302A; --sel:#2A69AD; --ok:#357548; --part:#1D2125;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1F2327; --panel:#2A2F34; --ink:#E4E7EA; --muted:#9AA2AA; --rule:#3F464D;
+    --run:#8C98A4; --idle:#3A4148; --warn:#E2AC2C; --alarm:#E24A40; --sel:#5E9DE2; --ok:#5CA46D; --part:#E4E7EA;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1F2327; --panel:#2A2F34; --ink:#E4E7EA; --muted:#9AA2AA; --rule:#3F464D;
+  --run:#8C98A4; --idle:#3A4148; --warn:#E2AC2C; --alarm:#E24A40; --sel:#5E9DE2; --ok:#5CA46D; --part:#E4E7EA;
+  color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Barlow,"Segoe UI",Roboto,system-ui,sans-serif;font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums}
+.wrap{max-width:1240px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;gap:6px 24px;align-items:flex-end;justify-content:space-between}
+h1{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:32px;line-height:1.05;margin:0}
+header p{margin:4px 0 0;color:var(--muted);max-width:62ch}
+.clock{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:15px;color:var(--muted);text-align:right}
+.clock b{display:block;font-size:30px;font-weight:600;color:var(--ink);line-height:1}
+.controls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:16px 0 12px}
+button{font:inherit;font-weight:600;background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:3px;padding:7px 12px;min-height:40px;cursor:pointer}
+button:hover{border-color:var(--run)}
+button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);min-width:84px}
+button.danger{color:var(--alarm);border-color:var(--alarm)}
+button:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:3px solid var(--sel);outline-offset:2px}
+.seg{display:inline-flex}
+.seg button{border-radius:0;margin-left:-1px;min-width:48px}
+.seg button:first-child{border-radius:3px 0 0 3px;margin-left:0}
+.seg button:last-child{border-radius:0 3px 3px 0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink);position:relative}
+.check{display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.check input{width:18px;height:18px;accent-color:var(--sel)}
+.target{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.target input{width:140px;accent-color:var(--sel)}
+.muted{color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);background:var(--panel);border:1px solid var(--rule)}
+.kpi{padding:10px 14px;border-left:1px solid var(--rule)}
+.kpi:first-child{border-left:0}
+.kpi .v{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:36px;font-weight:600;line-height:1.05}
+.kpi .l{font-size:14px;font-weight:600}
+.kpi .s{font-size:13px;color:var(--muted)}
+.v.ok{color:var(--ok)} .v.warn{color:var(--warn)} .v.alarm{color:var(--alarm)}
+@media (max-width:620px){
+  .kpis{grid-template-columns:1fr 1fr}
+  .kpi:nth-child(3){border-left:0}
+  .kpi:nth-child(n+3){border-top:1px solid var(--rule)}
+  .kpi .v{font-size:30px}
+}
+.grid{display:grid;gap:14px;margin-top:6px;grid-template-columns:minmax(0,1fr);grid-template-areas:"plant" "side" "table"}
+@media (min-width:980px){ .grid{grid-template-columns:minmax(0,1fr) 330px;grid-template-areas:"plant side" "table side"} }
+.side{grid-area:side;display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--rule);padding:14px;min-width:0}
+h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:21px;font-weight:600;margin:0 0 6px;line-height:1.15}
+#plantWrap{grid-area:plant;container-type:inline-size;min-width:0}
+#tablePanel{grid-area:table}
+
+/* line view */
+.lane{margin-bottom:16px}
+.lane h3{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:19px;font-weight:600;margin:0;line-height:1.2}
+.lane-note{margin:0 0 8px;color:var(--muted);font-size:13px;max-width:70ch}
+.stations{display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr))}
+@container (min-width:480px){ .stations{grid-template-columns:repeat(3,minmax(0,1fr))} }
+@container (min-width:760px){ .stations{grid-template-columns:repeat(var(--n,6),minmax(0,1fr))} }
+.lane.feeders .stations{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:420px){ .lane.feeders .stations{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.st{display:flex;flex-direction:column;gap:4px;text-align:left;background:var(--panel);border:2px solid var(--run);border-radius:4px;padding:8px 9px 9px;min-height:112px;font-weight:400;width:100%}
+.st:hover{border-color:var(--ink)}
+.st-top{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+.st-name{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:16px;line-height:1.1}
+.st-ct{font-size:12px;color:var(--muted);white-space:nowrap}
+.st-ct.over{color:var(--warn);font-weight:600}
+.st-state{font-size:13px;font-weight:600;color:var(--muted);line-height:1.2}
+.row{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
+.slots{display:flex;flex-wrap:wrap;gap:2px}
+.slots i{width:8px;height:8px;border:1px solid var(--rule);display:block}
+.slots i.on{background:var(--part);border-color:var(--part)}
+.slots i.rw{background:var(--warn);border-color:var(--warn)}
+.feeds{font-size:12px;color:var(--muted)}
+.meter{display:block;height:6px;background:var(--idle);margin-top:2px}
+.meter i{display:block;height:100%;background:var(--run)}
+.meter i.low{background:var(--warn)}
+.st.faulted .meter i,.st.planned .meter i{background:currentColor}
+.bar{margin-top:auto;height:4px;background:var(--idle);display:block}
+.bar i{display:block;height:100%;width:0;background:var(--run)}
+.st.running .st-state{color:var(--ink)}
+.st.rw .bar i{background:var(--warn)}
+.st.starved{border-style:dashed;border-color:var(--muted)}
+.st.starved .st-name{color:var(--muted)}
+.st.blocked{border-color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
+.st.blocked .st-state,.st.blocked .bar i{color:var(--warn);background-color:var(--warn)}
+.st.blocked .st-state{background:none}
+.st.faulted{background:var(--alarm);border-color:var(--alarm);color:#fff}
+.st.planned{background:var(--warn);border-color:var(--warn);color:#1D2125}
+.st.faulted *,.st.planned *{color:inherit !important}
+.st.faulted .slots i.on,.st.planned .slots i.on{background:currentColor;border-color:currentColor}
+.st.faulted .slots i,.st.planned .slots i{border-color:currentColor}
+.st.faulted .bar,.st.planned .bar{background:rgba(255,255,255,.35)}
+.st.faulted .bar i,.st.planned .bar i{background:currentColor}
+.st.sel{outline:3px solid var(--sel);outline-offset:2px}
+@media (prefers-reduced-motion: no-preference){ .st.faulted{animation:pulse 1.1s ease-in-out infinite} }
+@keyframes pulse{50%{opacity:.78}}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted);margin-top:-4px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:2px;border:2px solid var(--run);background:var(--panel)}
+.sw.starved{border:2px dashed var(--muted)}
+.sw.blocked{border-color:var(--warn)}
+.sw.fault{background:var(--alarm);border-color:var(--alarm)}
+.sw.planned{background:var(--warn);border-color:var(--warn)}
+.sw.rwk{background:var(--warn);border-color:var(--warn);width:9px;height:9px;border-width:1px}
+
+.state{font-weight:600}
+.state.faulted{color:var(--alarm)} .state.blocked,.state.planned{color:var(--warn)} .state.starved{color:var(--muted)}
+.field{margin:12px 0}
+.field label{display:flex;justify-content:space-between;font-weight:600}
+.field input{width:100%;accent-color:var(--sel);margin-top:4px}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+dl.stats{display:grid;grid-template-columns:1fr auto;gap:3px 12px;margin:10px 0 0;font-size:14px}
+dl.stats dt{color:var(--muted)} dl.stats dd{margin:0;text-align:right;font-weight:600}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--rule);padding:6px 8px}
+td{padding:7px 8px;border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody tr{cursor:pointer}
+tbody tr[aria-selected="true"] td{background:color-mix(in srgb,var(--sel) 14%,transparent)}
+td.num,th.num{text-align:right}
+.over{color:var(--warn);font-weight:600}
+.pareto{display:grid;gap:8px;margin-top:6px}
+.pbar{display:grid;grid-template-columns:minmax(0,1fr) 64px;gap:2px 10px;font-size:14px}
+.pbar .track{grid-column:1 / -1;height:10px;background:color-mix(in srgb,var(--rule) 50%,transparent)}
+.pbar .fill{height:100%;background:var(--run)}
+.pbar .fill.faulted{background:var(--alarm)} .pbar .fill.blocked,.pbar .fill.planned{background:var(--warn)} .pbar .fill.starved{background:var(--muted)}
+.pbar .val{text-align:right;font-weight:600}
+ol.log{list-style:none;margin:0;padding:0;font-size:14px;max-height:460px;overflow-y:auto}
+ol.log li{padding:5px 0;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:66px 1fr;gap:8px}
+ol.log time{color:var(--muted)}
+ol.log li.alarm span{color:var(--alarm);font-weight:600}
+ol.log li.warn span{color:var(--warn);font-weight:600}
+.empty{color:var(--muted);font-size:14px}
+footer{color:var(--muted);font-size:13px;margin:18px 0 8px;max-width:75ch}
+
+.line-block{margin-top:10px}
+.line-title{font-size:24px;margin:0 0 8px}
+.line-block .kpis{margin-bottom:14px}
+.transfer{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:6px 0 4px;padding:10px 12px;border:2px dashed var(--run);border-radius:4px;font-weight:600}
+.transfer .slots i{width:10px;height:10px}
+.tag{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;color:var(--sel)}
+#pLine{font-size:13px;color:var(--muted);font-weight:600}
+@media (max-width:620px){.clock{text-align:left}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>EV battery plant simulator</h1>
+      <p>Config-driven production lines on simulated time. Tap any station to change its cycle time, fault it, or service it.</p>
+    </div>
+    <div class="clock">Shift clock<b id="clock">00:00:00</b></div>
+  </header>
+  <div class="controls">
+    <button class="primary" id="runBtn">Pause</button>
+    <div class="seg" role="group" aria-label="Simulation speed">
+      <button data-speed="1">1×</button><button data-speed="10">10×</button><button data-speed="60">60×</button>
+    </div>
+    <label class="check"><input type="checkbox" id="randFaults" checked> Random faults</label>
+    <div class="target">
+      <label for="target"><b>Target</b> <span id="targetOut">100</span>/hr</label>
+      <input type="range" id="target" min="60" max="150" step="5" value="100">
+      <span class="muted" id="taktOut">takt 36.0 s</span>
+    </div>
+    <button id="resetBtn">Reset shift</button>
+  </div>
+  <div class="grid">
+    <div id="plantWrap">
+      <div id="plant"></div>
+      <div class="legend">
+        <span><i class="sw"></i>Running</span><span><i class="sw starved"></i>Starved</span><span><i class="sw blocked"></i>Blocked</span>
+        <span><i class="sw fault"></i>Faulted</span><span><i class="sw planned"></i>Planned stop</span><span><i class="sw rwk"></i>Rework unit</span>
+      </div>
+    </div>
+    <div class="side">
+      <section class="panel" id="stationPanel">
+        <div id="pLine"></div>
+        <h2 id="pName"></h2>
+        <div>State: <span class="state" id="pState"></span></div>
+        <div class="muted" id="pRole" style="font-size:14px;margin-top:4px"></div>
+        <div class="field">
+          <label for="ct"><span>Cycle time</span><span><output id="ctOut"></output> s</span></label>
+          <input type="range" id="ct" min="8" max="60" step="1">
+          <div class="muted" id="ctNote" style="font-size:13px"></div>
+        </div>
+        <div class="btns">
+          <button class="danger" id="faultBtn">Inject fault</button>
+          <button id="clearBtn">Clear fault</button>
+          <button id="serviceBtn" hidden></button>
+          <button id="consumeBtn" hidden></button>
+        </div>
+        <dl class="stats" id="pStats"></dl>
+      </section>
+      <section class="panel"><h2>Lost time by cause</h2><div class="pareto" id="pareto"></div></section>
+      <section class="panel"><h2>Event log</h2><ol class="log" id="log"></ol></section>
+    </div>
+    <section class="panel" id="tablePanel">
+      <h2 id="tableTitle">Stations</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Station</th><th>State</th><th class="num">Per unit</th><th class="num">OEE</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table></div>
+    </section>
+  </div>
+  <footer>Generic demonstration model inspired by battery pack assembly. Cycle times, defect rates and layout are invented for illustration.</footer>
+</div>
+<script>
+"use strict";
+// Line simulator engine: config-driven stations, lines, and a plant that links lines together.
+// Deterministic fixed-step simulation (call plant.step(dt) with simulated seconds).
+const QUEUE_CAP = 6, REWORK_CAP = 3;
+class Station {
+    constructor(def, line) {
+        this.def = def;
+        this.line = line;
+        this.part = null;
+        this.prog = 0;
+        this.state = 'starved';
+        this.reason = 'main';
+        this.fault = 0;
+        this.planned = false;
+        this.faultT = 0;
+        this.plannedT = 0;
+        this.busy = 0;
+        this.starvedT = 0;
+        this.blockedT = 0;
+        this.starvedBy = {};
+        this.done = 0;
+        this.pass = 0;
+        this.defects = 0;
+        this.buf = [];
+        this.rwq = [];
+        this.comps = {};
+        this.qcap = QUEUE_CAP;
+        this.wear = 0;
+        this.warned = false;
+        this.level = 0;
+        this.ct = this.ct0 = def.ct;
+        this.per = def.per || 1;
+        this.needs = def.needs || {};
+        for (const k in this.needs)
+            this.comps[k] = 0;
+        if (def.consumable)
+            this.level = def.consumable.capacity;
+    }
+    get id() { return this.def.id; }
+    get name() { return this.def.name; }
+    get effCycle() { return this.ct * this.per; }
+    get installKey() { return this.line.def.id + ':' + this.def.id; }
+}
+class Line {
+    constructor(def, plant) {
+        this.def = def;
+        this.plant = plant;
+        this.byId = {};
+        this.good = 0;
+        this.fp = 0;
+        this.scrap = 0;
+        this.unitScrap = 0;
+        this.rework = 0;
+        this.outTimes = [];
+        this.counters = {};
+        this.st = def.stations.map(d => new Station(d, this));
+        this.st.forEach(s => this.byId[s.id] = s);
+    }
+    unitName(p) { const pre = (p.id || '')[0]; return `${this.def.unitNames[pre] || 'Unit'} ${p.id}`; }
+    reasonLabel(s, r) {
+        if (r === 'main')
+            return null;
+        if (r === 'consumable')
+            return s.def.consumable.label.toLowerCase();
+        return this.def.components[r].label.toLowerCase();
+    }
+    fault(s, dur, planned, why) {
+        s.fault = dur;
+        s.planned = planned;
+        if (planned)
+            this.plant.log(`${s.name}: ${why || 'planned stop'}, ${fmtDur(dur)}`, '', this);
+        else
+            this.plant.log(`${s.name} faulted, about ${fmtDur(dur)} to recover`, 'alarm', this);
+    }
+    clearFault(s) { if (s.fault > 0) {
+        s.fault = 0;
+        this.plant.log(`${s.name} fault cleared by operator`, '', this);
+    } }
+    service(s) {
+        if (!s.def.service)
+            return;
+        s.wear = 0;
+        s.warned = false;
+        this.plant.log(s.def.service.doneMsg, '', this);
+        this.fault(s, s.def.service.stop, true, s.def.service.label.toLowerCase());
+    }
+    changeConsumable(s) {
+        const c = s.def.consumable;
+        if (!c)
+            return;
+        s.level = c.capacity;
+        s.warned = false;
+        this.fault(s, c.changeTime, true, `tech changing ${c.label.toLowerCase()}`);
+    }
+    defectRate(s) { const I = s.def.introduce; return I ? I.rate + s.wear * (I.wearPerCycle || 0) : 0; }
+    canStart(s) {
+        const next = s.rwq[0] || (s.def.src ? null : s.buf[0]);
+        if (!next && !s.def.src)
+            return 'main';
+        if (s.def.consumable && s.level < s.def.consumable.perCycle)
+            return 'consumable';
+        if (!(next && next.installed[s.installKey]))
+            for (const k in s.needs)
+                if (s.comps[k] < s.needs[k])
+                    return k;
+        return null;
+    }
+    start(s) {
+        const P = this.plant;
+        let p;
+        if (s.rwq.length)
+            p = s.rwq.shift();
+        else if (s.def.src) {
+            const pre = s.def.src.prefix;
+            p = { tags: {}, timers: {}, installed: {} };
+            if (pre) {
+                this.counters[pre] = (this.counters[pre] || 0) + 1;
+                p.id = pre + this.counters[pre];
+            }
+        }
+        else
+            p = s.buf.shift();
+        s.part = p;
+        s.prog = 0;
+        const tc = s.def.checkTimer;
+        if (tc && p.timers[tc.timer] != null && P.t - p.timers[tc.timer] > tc.limit) {
+            s.done++;
+            p.route = 'rework';
+            p.back = tc.reworkTo;
+            p.msg = `${tc.msg} (${fmtDur(P.t - p.timers[tc.timer])} old), sent back to ${this.byId[tc.reworkTo].name}`;
+            return;
+        }
+        if (!p.installed[s.installKey]) {
+            for (const k in s.needs)
+                s.comps[k] -= s.needs[k];
+            if (Object.keys(s.needs).length)
+                p.installed[s.installKey] = true;
+        }
+    }
+    decide(s) {
+        const P = this.plant, d = s.def, p = s.part;
+        s.done++;
+        p.route = 'next';
+        const I = d.introduce;
+        if (I && !(I.firstPassOnly && p.rw)) {
+            if (I.wearPerCycle)
+                s.wear++;
+            if (P.rand() < this.defectRate(s)) {
+                p.tags[I.tag] = true;
+                s.defects++;
+            }
+            if (I.warnAt && !s.warned && this.defectRate(s) > I.warnAt) {
+                s.warned = true;
+                P.log(I.warnMsg, 'warn', this);
+            }
+        }
+        const X = d.inspect;
+        if (X && p.tags[X.tag]) {
+            if (X.reworkTo && P.rand() < X.reworkShare) {
+                p.route = 'rework';
+                p.back = X.reworkTo;
+                p.msg = X.reworkMsg;
+            }
+            else {
+                p.route = 'scrap';
+                p.msg = X.scrapMsg;
+            }
+        }
+        if (d.startTimer)
+            p.timers[d.startTimer] = P.t;
+        const c = d.consumable;
+        if (c) {
+            s.level -= c.perCycle;
+            if (!s.warned && s.level <= c.capacity * c.warnAt) {
+                s.warned = true;
+                P.log(`${c.label} below ${Math.round(c.warnAt * 100)}%. Plan a change.`, 'warn', this);
+            }
+            if (s.level < c.perCycle)
+                P.log(`${c.label} empty. ${s.name} stopped until a tech changes it.`, 'alarm', this);
+        }
+        if (p.route === 'next') {
+            if (d.out.ship)
+                p.route = 'ship';
+            else if (d.out.export)
+                p.route = 'export';
+            s.pass++;
+        }
+    }
+    recordOut(p) { this.good++; if (!p.rw)
+        this.fp++; this.outTimes.push(this.plant.t); }
+    move(s) {
+        const P = this.plant, p = s.part, d = s.def;
+        switch (p.route) {
+            case 'scrap':
+                this.scrap++;
+                if ((p.id || '')[0] === this.def.finalPrefix)
+                    this.unitScrap++;
+                P.log(`${this.unitName(p)} scrapped at ${s.name}: ${p.msg}`, 'warn', this);
+                return true;
+            case 'ship':
+                this.recordOut(p);
+                return true;
+            case 'export': {
+                const c = P.connection(d.out.export), t = P.station(c.toLine, c.toStation);
+                if (t.buf.length >= t.qcap)
+                    return false;
+                this.recordOut(p);
+                p.route = null;
+                p.rw = false;
+                t.buf.push(p);
+                return true;
+            }
+            case 'rework': {
+                const t = this.byId[p.back];
+                if (t.rwq.length >= REWORK_CAP)
+                    return false;
+                P.log(`${this.unitName(p)} failed ${s.name}: ${p.msg}`, '', this);
+                p.rw = true;
+                p.tags = {};
+                p.route = null;
+                t.rwq.push(p);
+                this.rework++;
+                return true;
+            }
+            default: {
+                const t = this.byId[d.out.to];
+                if (d.out.comp) {
+                    if (t.comps[d.out.comp] >= this.def.components[d.out.comp].cap)
+                        return false;
+                    t.comps[d.out.comp]++;
+                    return true;
+                }
+                if (t.buf.length >= t.qcap)
+                    return false;
+                p.route = null;
+                t.buf.push(p);
+                return true;
+            }
+        }
+    }
+    step(dt) {
+        const P = this.plant;
+        for (let i = this.st.length - 1; i >= 0; i--) {
+            const s = this.st[i];
+            if (s.fault > 0) {
+                s.fault -= dt;
+                if (s.planned)
+                    s.plannedT += dt;
+                else
+                    s.faultT += dt;
+                s.state = 'faulted';
+                if (s.fault <= 0) {
+                    s.fault = 0;
+                    P.log(`${s.name} back in auto`, '', this);
+                }
+                continue;
+            }
+            if (s.part && s.part.route) {
+                if (this.move(s)) {
+                    s.part = null;
+                    s.prog = 0;
+                }
+                else {
+                    s.state = 'blocked';
+                    s.blockedT += dt;
+                    continue;
+                }
+            }
+            if (!s.part) {
+                const why = this.canStart(s);
+                if (why) {
+                    s.state = 'starved';
+                    s.reason = why;
+                    s.starvedT += dt;
+                    s.starvedBy[why] = (s.starvedBy[why] || 0) + dt;
+                    continue;
+                }
+                this.start(s);
+            }
+            s.state = 'running';
+            s.busy += dt;
+            s.prog += dt;
+            if (s.prog >= s.ct && !s.part.route)
+                this.decide(s);
+            if (P.randomFaults && P.rand() < dt / 9000)
+                this.fault(s, 60 + P.rand() * 240, false);
+        }
+        const cut = P.t - 3600;
+        while (this.outTimes.length && this.outTimes[0] < cut)
+            this.outTimes.shift();
+    }
+    // ---- metrics ----
+    oee(s) {
+        const t = this.plant.t || 1, up = Math.max(0, t - s.faultT - s.plannedT);
+        const A = up / t, Pf = up > 0 ? Math.min(1, s.done * s.ct0 / up) : 0;
+        let Q = 1;
+        if (s.done) {
+            if (s.def.inspect)
+                Q = s.pass / s.done;
+            else if (s.def.introduce && s.def.introduce.wearPerCycle)
+                Q = Math.max(0, 1 - s.defects / s.done);
+        }
+        return { A, P: Pf, Q, O: A * Pf * Q };
+    }
+    jph() { const t = this.plant.t; return t < 600 ? null : this.outTimes.length * 3600 / Math.min(t, 3600); }
+    fpy() { const n = this.good + this.unitScrap; return n ? this.fp / n : null; }
+    lineOee() { const t = this.plant.t; return t > 60 ? Math.min(1, this.good * this.def.idealCycle / t) : null; }
+    wip() { return this.st.reduce((a, s) => a + s.buf.length + s.rwq.length + (s.part && s.part.id ? 1 : 0), 0); }
+}
+class Plant {
+    constructor(defs, connections = []) {
+        this.connections = connections;
+        this.t = 0;
+        this.byId = {};
+        this.logs = [];
+        this.logVersion = 0;
+        this.randomFaults = true;
+        this.targetJPH = 100;
+        this.rand = Math.random;
+        this.lines = defs.map(d => new Line(d, this));
+        this.lines.forEach(l => this.byId[l.def.id] = l);
+        connections.forEach(c => { this.station(c.toLine, c.toStation).qcap = c.capacity; });
+    }
+    station(line, id) { return this.byId[line].byId[id]; }
+    connection(id) { return this.connections.find(c => c.id === id); }
+    takt() { return 3600 / this.targetJPH; }
+    log(msg, kind = '', line) {
+        this.logs.unshift({ t: this.t, msg, kind, line: line ? line.def.short : undefined });
+        if (this.logs.length > 80)
+            this.logs.pop();
+        this.logVersion++;
+    }
+    step(dt) {
+        this.t += dt;
+        for (let i = this.lines.length - 1; i >= 0; i--)
+            this.lines[i].step(dt); // downstream first
+    }
+}
+function fmt(t) { t = Math.max(0, Math.floor(t)); const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60; return [h, m, s].map(n => String(n).padStart(2, '0')).join(':'); }
+function fmtDur(s) { s = Math.round(s); return s >= 60 ? `${Math.floor(s / 60)} min${s % 60 ? ' ' + (s % 60) + ' s' : ''}` : `${s} s`; }
+function pct(x) { return (x * 100).toFixed(1) + '%'; }
+// Line 1: battery pack assembly. Line 2 gets its own file and a ConnectionDef in PLANT_CONNECTIONS.
+const LINE1 = {
+    id: 'line1', short: 'L1', name: 'Line 1: Battery pack assembly',
+    unitNames: { M: 'Module', P: 'Pack' }, finalPrefix: 'P', idealCycle: 34,
+    components: {
+        module: { label: 'Modules', cap: 6 },
+        bottom: { label: 'Bottom plates', cap: 6 },
+        side: { label: 'Side covers', cap: 12 },
+        top: { label: 'Top plates', cap: 6 },
+    },
+    lanes: [
+        { name: 'Module subassembly', note: 'Cells are tested, stacked and welded into a module, then checked before it goes to Module install.' },
+        { name: 'Component feeders', note: 'Bottom plates, side covers and top plates are kitted and delivered to their stations on the pack line.', feeders: true },
+        { name: 'Pack assembly', note: 'Each pack gets a bottom plate, a module, two side covers, an adhesive seal bead and a top plate, then an end-of-line test. The top plate must go on within the 5-minute adhesive open time.' },
+    ],
+    stations: [
+        { id: 'intake', lane: 0, name: 'Cell intake', ct: 18, src: { prefix: 'M' }, out: { to: 'test' },
+            introduce: { tag: 'cellDefect', rate: 0.02 }, role: 'Loads cells for one module. About 2% of incoming cells are bad.' },
+        { id: 'test', lane: 0, name: 'Cell test', ct: 24, out: { to: 'stack' },
+            inspect: { tag: 'cellDefect', reworkShare: 0, scrapMsg: 'cells failed test' }, role: 'Tests cells. Failures are scrapped.' },
+        { id: 'stack', lane: 0, name: 'Module stacking', ct: 30, robot: true, out: { to: 'weld' }, role: 'Robot stacks cells into a module.' },
+        { id: 'weld', lane: 0, name: 'Busbar weld', ct: 34, robot: true, out: { to: 'mcheck' },
+            introduce: { tag: 'weldDefect', rate: 0.008, wearPerCycle: 0.00035, warnAt: 0.04, warnMsg: 'Weld defect risk above 4%. Dress the weld tip.' },
+            service: { label: 'Dress weld tip', stop: 60, doneMsg: 'Weld tip dressed, defect risk reset' },
+            role: 'Robot welds busbars. The tip wears with every weld, so defect risk climbs until it is dressed.' },
+        { id: 'mcheck', lane: 0, name: 'Module check', ct: 22, out: { to: 'modinst', comp: 'module' },
+            inspect: { tag: 'weldDefect', reworkTo: 'weld', reworkShare: 0.65, reworkMsg: 'weld defect, sent back to Busbar weld', scrapMsg: 'weld defect not repairable' },
+            role: 'Inspects welds. Failures go back to Busbar weld.' },
+        { id: 'fbottom', lane: 1, name: 'Bottom plate feed', ct: 25, src: {}, out: { to: 'bottom', comp: 'bottom' }, role: 'Delivers bottom plates to Bottom plate load.' },
+        { id: 'fside', lane: 1, name: 'Side cover feed', ct: 15, src: {}, per: 2, out: { to: 'side', comp: 'side' }, role: 'Delivers side covers to Side covers, 2 per pack.' },
+        { id: 'ftop', lane: 1, name: 'Top plate feed', ct: 25, src: {}, out: { to: 'top', comp: 'top' }, role: 'Delivers top plates to Top plate install.' },
+        { id: 'bottom', lane: 2, name: 'Bottom plate load', ct: 22, src: { prefix: 'P' }, needs: { bottom: 1 }, out: { to: 'modinst' }, role: 'Starts a new pack on a bottom plate.' },
+        { id: 'modinst', lane: 2, name: 'Module install', ct: 30, robot: true, needs: { module: 1 }, out: { to: 'side' }, role: 'Robot sets a module into the pack.' },
+        { id: 'side', lane: 2, name: 'Side covers', ct: 28, needs: { side: 2 }, out: { to: 'glue' }, role: 'Fits two side covers per pack.' },
+        { id: 'glue', lane: 2, name: 'Adhesive dispense', ct: 26, robot: true, out: { to: 'top' }, startTimer: 'adhesive',
+            consumable: { label: 'Adhesive drum', capacity: 150, perCycle: 1, changeTime: 180, warnAt: 0.15 }, role: 'Robot dispenses the seal bead. The top plate must go on within 5 minutes or the pack is re-glued.' },
+        { id: 'top', lane: 2, name: 'Top plate install', ct: 32, robot: true, needs: { top: 1 }, out: { to: 'eol' },
+            checkTimer: { timer: 'adhesive', limit: 300, reworkTo: 'glue', msg: 'adhesive open time exceeded' },
+            introduce: { tag: 'sealLeak', rate: 0.015, firstPassOnly: true },
+            role: 'Fits the top plate. Packs whose adhesive is past open time go back to be re-glued.' },
+        { id: 'eol', lane: 2, name: 'End-of-line test', ct: 28, out: { to: 'pack' },
+            inspect: { tag: 'sealLeak', reworkTo: 'glue', reworkShare: 0.8, reworkMsg: 'seal leak, sent back to Adhesive dispense', scrapMsg: 'seal leak not repairable' },
+            role: 'Leak and electrical test. Seal failures go back to Adhesive dispense.' },
+        { id: 'pack', lane: 2, name: 'Pack out', ct: 20, out: { ship: true }, role: 'Finished packs leave the line. When Line 2 is added, this feeds it.' },
+    ],
+};
+const PLANT_LINES = [LINE1];
+const PLANT_CONNECTIONS = [];
+// Dashboard: renders every line in the plant, a station panel, stations table, lost-time Pareto and event log.
+const $ = (s) => document.querySelector(s);
+let plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS);
+let running = true, speed = 10;
+let sel = { li: 0, si: plant.lines[0].st.findIndex(s => s.id === 'glue') };
+let selShown = '', logShown = -1;
+let cards = [];
+let kpiEls = [];
+let transferEls = [];
+function selStation() { return plant.lines[sel.li].st[sel.si]; }
+function selLine() { return plant.lines[sel.li]; }
+function stateClass(s) { return s.state === 'faulted' && s.planned ? 'planned' : s.state; }
+function stateLabel(s) {
+    if (s.state === 'faulted')
+        return s.planned ? 'Planned stop' : 'Faulted';
+    if (s.state === 'starved') {
+        const r = s.line.reasonLabel(s, s.reason);
+        return r ? `Waiting for ${r}` : 'Starved';
+    }
+    return s.state === 'running' ? 'Running' : 'Blocked';
+}
+function stateText(s) {
+    if (s.state === 'faulted')
+        return `${stateLabel(s)}, ${fmtDur(s.fault)} left`;
+    if (s.state === 'running' && s.part && s.part.id)
+        return `Running ${s.part.id}${s.part.rw ? ' (rework)' : ''}`;
+    return stateLabel(s);
+}
+function ctText(s) { return s.per > 1 ? `${s.ct} s ×${s.per}` : `${s.ct} s`; }
+function esc(x) { return x.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function build() {
+    const multi = plant.lines.length > 1;
+    $('#plant').innerHTML = plant.lines.map((ln, li) => {
+        const conn = plant.connections.find(c => c.toLine === ln.def.id);
+        const transfer = conn ? `<div class="transfer" data-conn="${conn.id}"><span class="t-label">${esc(conn.label)}</span><span class="slots" data-f="tq"></span></div>` : '';
+        return `${transfer}<section class="line-block" aria-label="${esc(ln.def.name)}">
+      <h2 class="line-title">${esc(ln.def.name)}</h2>
+      <div class="kpis" data-li="${li}">
+        <div class="kpi"><div class="l">Output</div><div class="v" data-k="jph">—</div><div class="s" data-k="jphS"></div></div>
+        <div class="kpi"><div class="l">First-pass yield</div><div class="v" data-k="fpy">—</div><div class="s" data-k="fpyS"></div></div>
+        <div class="kpi"><div class="l">Line OEE</div><div class="v" data-k="oee">—</div><div class="s">against ${ln.def.idealCycle} s design cycle</div></div>
+        <div class="kpi"><div class="l">Work in process</div><div class="v" data-k="wip">0</div><div class="s" data-k="wipS"></div></div>
+      </div>
+      ${ln.def.lanes.map((lane, lj) => {
+            const sts = ln.st.map((s, si) => ({ s, si })).filter(x => x.s.def.lane === lj);
+            return `<div class="lane${lane.feeders ? ' feeders' : ''}"><h3>${esc(lane.name)}</h3><p class="lane-note">${esc(lane.note)}</p>
+          <div class="stations" style="--n:${sts.length}">${sts.map(({ s, si }) => card(ln, li, s, si)).join('')}</div></div>`;
+        }).join('')}
+    </section>`;
+    }).join('');
+    cards = plant.lines.map(() => []);
+    document.querySelectorAll('.st').forEach(b => {
+        const li = +b.dataset.li, si = +b.dataset.si;
+        const e = { root: b, state: null, ct: null, bar: null, comps: {}, cache: {} };
+        b.querySelectorAll('[data-f]').forEach(x => {
+            const f = x.dataset.f;
+            if (f.startsWith('c-'))
+                e.comps[f.slice(2)] = x;
+            else
+                e[f] = x;
+        });
+        cards[li][si] = e;
+        b.onclick = () => select(li, si);
+    });
+    kpiEls = plant.lines.map((_, li) => {
+        const box = document.querySelector(`.kpis[data-li="${li}"]`), o = {};
+        box.querySelectorAll('[data-k]').forEach(x => o[x.dataset.k] = x);
+        return o;
+    });
+    transferEls = Array.from(document.querySelectorAll('.transfer')).map(el => ({ el, conn: plant.connection(el.dataset.conn) }));
+    document.body.classList.toggle('multi', multi);
+}
+function card(ln, li, s, si) {
+    const d = s.def, comps = ln.def.components;
+    let to = '';
+    if (d.out.comp)
+        to = `To ${esc(ln.byId[d.out.to].name)}`;
+    if (d.out.export) {
+        const c = plant.connection(d.out.export);
+        to = `To ${esc(plant.byId[c.toLine].def.short)}`;
+    }
+    return `<button class="st" data-li="${li}" data-si="${si}">
+    <span class="st-top"><span class="st-name">${esc(d.name)}</span><span class="st-ct" data-f="ct"></span></span>
+    <span class="st-state" data-f="state"></span>
+    ${d.src ? '' : `<span class="row">Queue<span class="slots" data-f="q"></span></span>`}
+    ${Object.keys(s.needs).map(k => `<span class="row">${esc(comps[k].label)}<span class="slots" data-f="c-${k}"></span></span>`).join('')}
+    ${d.consumable ? `<span class="row">${esc(d.consumable.label)}<span class="meter"><i data-f="meter"></i></span></span>` : ''}
+    ${to ? `<span class="feeds">${to}</span>` : ''}
+    <span class="bar"><i data-f="bar"></i></span>
+  </button>`;
+}
+function put(e, key, el, html) { if (e.cache[key] !== html) {
+    e.cache[key] = html;
+    el.innerHTML = html;
+} }
+function slotsQ(s) {
+    let h = '';
+    for (let j = 0; j < s.qcap; j++) {
+        const p = s.buf[j];
+        h += p ? (p.rw ? '<i class="rw"></i>' : '<i class="on"></i>') : '<i></i>';
+    }
+    return h + s.rwq.map(() => '<i class="rw"></i>').join('');
+}
+function slotsN(n, cap) { let h = ''; for (let j = 0; j < cap; j++)
+    h += j < n ? '<i class="on"></i>' : '<i></i>'; return h; }
+function updateLine() {
+    const T = plant.takt();
+    plant.lines.forEach((ln, li) => ln.st.forEach((s, si) => {
+        const e = cards[li][si];
+        const cls = 'st ' + stateClass(s) + (li === sel.li && si === sel.si ? ' sel' : '') + (s.part && s.part.rw ? ' rw' : '');
+        if (e.root.className !== cls)
+            e.root.className = cls;
+        put(e, 'state', e.state, stateText(s));
+        put(e, 'ct', e.ct, ctText(s));
+        e.ct.classList.toggle('over', s.effCycle > T);
+        if (e.q)
+            put(e, 'q', e.q, slotsQ(s));
+        for (const k in e.comps)
+            put(e, 'c' + k, e.comps[k], slotsN(s.comps[k], ln.def.components[k].cap));
+        if (e.meter) {
+            const c = s.def.consumable;
+            e.meter.style.width = (s.level / c.capacity * 100).toFixed(1) + '%';
+            e.meter.classList.toggle('low', s.level <= c.capacity * c.warnAt);
+        }
+        e.bar.style.width = s.part ? Math.min(100, s.prog / s.ct * 100).toFixed(1) + '%' : '0';
+    }));
+    transferEls.forEach(({ el, conn }) => {
+        const t = plant.station(conn.toLine, conn.toStation);
+        el.querySelector('[data-f="tq"]').innerHTML = slotsN(t.buf.length, t.qcap);
+    });
+}
+function setKpi(el, text, cls = '') { el.textContent = text; el.className = 'v' + (cls ? ' ' + cls : ''); }
+function renderUI() {
+    $('#clock').textContent = fmt(plant.t);
+    const T = plant.takt();
+    plant.lines.forEach((ln, li) => {
+        const k = kpiEls[li], unit = (ln.def.unitNames[ln.def.finalPrefix] || 'unit').toLowerCase() + 's';
+        const jph = ln.jph();
+        if (jph == null) {
+            setKpi(k.jph, '—');
+            k.jphS.textContent = `${unit}/hr, warming up`;
+        }
+        else {
+            const r = jph / plant.targetJPH;
+            setKpi(k.jph, jph.toFixed(0), r >= 1 ? 'ok' : r >= .9 ? 'warn' : 'alarm');
+            k.jphS.textContent = `${unit}/hr vs ${plant.targetJPH} target`;
+        }
+        const f = ln.fpy();
+        if (f == null) {
+            setKpi(k.fpy, '—');
+            k.fpyS.textContent = `no ${unit} yet`;
+        }
+        else {
+            setKpi(k.fpy, pct(f), f >= .97 ? '' : f >= .93 ? 'warn' : 'alarm');
+            k.fpyS.textContent = `${ln.rework} reworks, ${ln.scrap} scrapped units`;
+        }
+        const o = ln.lineOee();
+        setKpi(k.oee, o == null ? '—' : pct(o));
+        setKpi(k.wip, String(ln.wip()));
+        k.wipS.textContent = `${ln.good} out, ${ln.scrap} scrapped`;
+    });
+    const s = selStation(), ln = selLine(), o = ln.oee(s), d = s.def;
+    $('#pLine').textContent = ln.def.name;
+    $('#pName').textContent = d.name;
+    const ps = $('#pState');
+    ps.textContent = stateText(s);
+    ps.className = 'state ' + stateClass(s);
+    $('#pRole').textContent = d.role || '';
+    const key = sel.li + ':' + sel.si;
+    if (selShown !== key) {
+        $('#ct').value = String(s.ct);
+        selShown = key;
+    }
+    $('#ctOut').textContent = String(s.ct);
+    const effTxt = s.per > 1 ? `${s.effCycle} s per unit (${s.per} parts)` : `${s.effCycle} s`;
+    $('#ctNote').textContent = s.effCycle > T ? `${effTxt} is slower than takt (${T.toFixed(1)} s). This station will limit output.` : `${effTxt}, within takt (${T.toFixed(1)} s). Design cycle ${s.ct0} s.`;
+    $('#faultBtn').disabled = s.fault > 0;
+    $('#clearBtn').disabled = !(s.fault > 0);
+    const sb = $('#serviceBtn');
+    sb.hidden = !d.service;
+    if (d.service)
+        sb.textContent = d.service.label;
+    const cb = $('#consumeBtn');
+    cb.hidden = !d.consumable;
+    if (d.consumable)
+        cb.textContent = `Change ${d.consumable.label.toLowerCase()}`;
+    const t = plant.t || 1;
+    const rows = [['Availability', pct(o.A)], ['Performance', pct(o.P)], ['Quality', pct(o.Q)], ['OEE', pct(o.O)], ['Cycles completed', s.done], ['Starved', pct(s.starvedT / t)], ['Blocked', pct(s.blockedT / t)]];
+    if (d.introduce && d.introduce.wearPerCycle)
+        rows.push(['Cycles since service', s.wear], ['Defect risk per cycle', pct(ln.defectRate(s))]);
+    if (d.consumable)
+        rows.push([`${d.consumable.label} left`, pct(s.level / d.consumable.capacity)], ['Cycles until change', s.level]);
+    if (d.checkTimer)
+        rows.push(['Open time limit', fmtDur(d.checkTimer.limit)]);
+    $('#pStats').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+    $('#tableTitle').textContent = `Stations, ${ln.def.short}`;
+    $('#tbody').innerHTML = ln.st.map((x, i) => `<tr data-i="${i}" aria-selected="${i === sel.si}" tabindex="0">
+    <td>${esc(x.name)}</td><td class="state ${stateClass(x)}">${stateLabel(x)}</td>
+    <td class="num${x.effCycle > T ? ' over' : ''}">${x.effCycle} s</td><td class="num">${plant.t > 60 ? pct(ln.oee(x).O) : '—'}</td></tr>`).join('');
+    const multi = plant.lines.length > 1;
+    const items = [];
+    plant.lines.forEach(l => l.st.forEach(x => {
+        const n = (multi ? l.def.short + ' ' : '') + x.name;
+        if (x.faultT > 1)
+            items.push({ k: `${n}, fault`, v: x.faultT, c: 'faulted' });
+        if (x.plannedT > 1)
+            items.push({ k: `${n}, planned stop`, v: x.plannedT, c: 'planned' });
+        if (x.blockedT > 1)
+            items.push({ k: `${n}, blocked`, v: x.blockedT, c: 'blocked' });
+        for (const r in x.starvedBy)
+            if (x.starvedBy[r] > 1) {
+                const lbl = l.reasonLabel(x, r);
+                items.push({ k: lbl ? `${n}, waiting for ${lbl}` : `${n}, starved`, v: x.starvedBy[r], c: 'starved' });
+            }
+    }));
+    items.sort((a, b) => b.v - a.v);
+    const top = items.filter(it => plant.t < 900 || it.v > 20).slice(0, 7), max = top.length ? top[0].v : 1;
+    $('#pareto').innerHTML = top.length ? top.map(it => `<div class="pbar"><span>${esc(it.k)}</span><span class="val">${(it.v / 60).toFixed(1)} min</span><div class="track"><div class="fill ${it.c}" style="width:${(it.v / max * 100).toFixed(1)}%"></div></div></div>`).join('')
+        : '<p class="empty">Nothing lost yet. Inject a fault or slow a station to see where time goes.</p>';
+    if (logShown !== plant.logVersion) {
+        $('#log').innerHTML = plant.logs.map(e => `<li class="${e.kind}"><time>${fmt(e.t)}</time><span>${multi && e.line ? `<b class="tag">${e.line}</b> ` : ''}${esc(e.msg)}</span></li>`).join('');
+        logShown = plant.logVersion;
+    }
+    $('#runBtn').textContent = running ? 'Pause' : 'Run';
+    document.querySelectorAll('[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === speed)));
+}
+function select(li, si) { sel = { li, si }; renderUI(); updateLine(); }
+function refresh() { renderUI(); updateLine(); }
+$('#tbody').addEventListener('click', e => { const tr = e.target.closest('tr'); if (tr)
+    select(sel.li, +tr.dataset.i); });
+$('#tbody').addEventListener('keydown', e => { const t = e.target; if ((e.key === 'Enter' || e.key === ' ') && t.dataset.i) {
+    e.preventDefault();
+    select(sel.li, +t.dataset.i);
+} });
+$('#runBtn').onclick = () => { running = !running; renderUI(); };
+document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { speed = +b.dataset.speed; renderUI(); });
+$('#randFaults').onchange = e => { plant.randomFaults = e.target.checked; plant.log(plant.randomFaults ? 'Random faults on' : 'Random faults off'); };
+$('#target').oninput = e => { plant.targetJPH = +e.target.value; $('#targetOut').textContent = String(plant.targetJPH); $('#taktOut').textContent = `takt ${plant.takt().toFixed(1)} s`; refresh(); };
+$('#target').onchange = () => plant.log(`Target changed to ${plant.targetJPH}/hr`);
+$('#ct').oninput = e => { selStation().ct = +e.target.value; refresh(); };
+$('#ct').onchange = () => { const s = selStation(); plant.log(`${s.name} cycle time set to ${s.ct} s`, '', s.line); };
+$('#faultBtn').onclick = () => { const s = selStation(); s.line.fault(s, 180, false); refresh(); };
+$('#clearBtn').onclick = () => { const s = selStation(); s.line.clearFault(s); refresh(); };
+$('#serviceBtn').onclick = () => { const s = selStation(); s.line.service(s); refresh(); };
+$('#consumeBtn').onclick = () => { const s = selStation(); s.line.changeConsumable(s); refresh(); };
+$('#resetBtn').onclick = () => {
+    const rf = plant.randomFaults, tj = plant.targetJPH;
+    plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS);
+    plant.randomFaults = rf;
+    plant.targetJPH = tj;
+    plant.log(`Shift started. Target ${tj}/hr.`);
+    build();
+    logShown = -1;
+    selShown = '';
+    refresh();
+};
+let last = performance.now(), uiT = 0, lineT = 0;
+function frame(now) {
+    const real = Math.min((now - last) / 1000, 0.25);
+    last = now;
+    if (running) {
+        let sim = real * speed;
+        while (sim > 0) {
+            const d = Math.min(0.5, sim);
+            plant.step(d);
+            sim -= d;
+        }
+    }
+    lineT += real;
+    if (lineT > 0.1) {
+        lineT = 0;
+        updateLine();
+    }
+    uiT += real;
+    if (uiT > 0.3) {
+        uiT = 0;
+        renderUI();
+    }
+    requestAnimationFrame(frame);
+}
+plant.log(`Shift started. Target ${plant.targetJPH}/hr.`);
+build();
+refresh();
+requestAnimationFrame(frame);
+
+</script>
+</body>
+</html>
