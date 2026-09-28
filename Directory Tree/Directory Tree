@@ -12,5 +12,7 @@ production line ready demonstration/
 ├── test/
 │   ├── sim.test.ts       # headless tests, incl. stub Line 2 connection
 │   └── tsconfig.json     # compiler settings for the tests
-└── dist/
-    └── index.html        # built simulator (open this in a browser)
+├── dist/
+│   └── index.html        # built simulator (open this in a browser)
+└── Directory Tree/
+    └── Directory Tree    # this annotated project tree
