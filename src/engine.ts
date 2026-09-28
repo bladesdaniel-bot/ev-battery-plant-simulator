@@ -22,7 +22,7 @@ interface StationDef {
   startTimer?: string;                // stamps a timer on the part (e.g. adhesive dispensed)
   checkTimer?: TimerCheckDef;         // part must arrive before the timer limit
   consumable?: ConsumableDef;         // e.g. adhesive drum
-  service?: ServiceDef;               // e.g. dress weld tip (resets wear)
+  service?: ServiceDef;               // e.g. clean laser optics (resets wear)
 }
 interface LaneDef { name: string; note: string; feeders?: boolean }
 interface LineDef {
