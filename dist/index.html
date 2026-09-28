@@ -819,25 +819,32 @@ function renderUI() {
     <td>${esc(x.name)}</td><td class="state ${stateClass(x)}">${stateLabel(x)}</td>
     <td class="num${x.effCycle > T ? ' over' : ''}">${x.effCycle} s</td><td class="num">${plant.t > 60 ? pct(ln.oee(x).O) : '—'}</td></tr>`).join('');
     const multi = plant.lines.length > 1;
-    const items = [];
+    const causes = [], effects = [];
     plant.lines.forEach(l => l.st.forEach(x => {
         const n = (multi ? l.def.short + ' ' : '') + x.name;
         if (x.faultT > 1)
-            items.push({ k: `${n}, fault`, v: x.faultT, c: 'faulted' });
+            causes.push({ k: `${n}, fault`, v: x.faultT, c: 'faulted' });
         if (x.plannedT > 1)
-            items.push({ k: `${n}, planned stop`, v: x.plannedT, c: 'planned' });
+            causes.push({ k: `${n}, planned stop`, v: x.plannedT, c: 'planned' });
         if (x.blockedT > 1)
-            items.push({ k: `${n}, blocked`, v: x.blockedT, c: 'blocked' });
+            effects.push({ k: `${n}, blocked`, v: x.blockedT, c: 'blocked' });
         for (const r in x.starvedBy)
             if (x.starvedBy[r] > 1) {
                 const lbl = l.reasonLabel(x, r);
-                items.push({ k: lbl ? `${n}, waiting for ${lbl}` : `${n}, starved`, v: x.starvedBy[r], c: 'starved' });
+                if (r === 'consumable')
+                    causes.push({ k: `${n}, ${lbl} empty`, v: x.starvedBy[r], c: 'faulted' });
+                else
+                    effects.push({ k: lbl ? `${n}, waiting for ${lbl}` : `${n}, starved`, v: x.starvedBy[r], c: 'starved' });
             }
     }));
-    items.sort((a, b) => b.v - a.v);
-    const top = items.filter(it => plant.t < 900 || it.v > 20).slice(0, 7), max = top.length ? top[0].v : 1;
-    $('#pareto').innerHTML = top.length ? top.map(it => `<div class="pbar"><span>${esc(it.k)}</span><span class="val">${(it.v / 60).toFixed(1)} min</span><div class="track"><div class="fill ${it.c}" style="width:${(it.v / max * 100).toFixed(1)}%"></div></div></div>`).join('')
-        : '<p class="empty">Nothing lost yet. Inject a fault or slow a station to see where time goes.</p>';
+    const keep = (a, n) => a.sort((p, q) => q.v - p.v).filter(it => plant.t < 900 || it.v > 20).slice(0, n);
+    const topC = keep(causes, 5), topE = keep(effects, 3);
+    const max = Math.max(1, ...topC.map(it => it.v), ...topE.map(it => it.v));
+    const bars = (a) => a.map(it => `<div class="pbar"><span>${esc(it.k)}</span><span class="val">${(it.v / 60).toFixed(1)} min</span><div class="track"><div class="fill ${it.c}" style="width:${(it.v / max * 100).toFixed(1)}%"></div></div></div>`).join('');
+    $('#pareto').innerHTML = !topC.length && !topE.length
+        ? '<p class="empty">Nothing lost yet. Inject a fault or slow a station to see where time goes.</p>'
+        : `<h3 class="psub">Root causes</h3>${topC.length ? bars(topC) : '<p class="empty">No stops yet.</p>'}`
+            + (topE.length ? `<h3 class="psub">Knock-on effects</h3>${bars(topE)}` : '');
     if (logShown !== plant.logVersion) {
         $('#log').innerHTML = plant.logs.map(e => `<li class="${e.kind}"><time>${fmt(e.t)}</time><span>${multi && e.line ? `<b class="tag">${e.line}</b> ` : ''}${esc(e.msg)}</span></li>`).join('');
         logShown = plant.logVersion;
