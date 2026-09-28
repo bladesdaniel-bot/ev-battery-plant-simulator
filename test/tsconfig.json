@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "module": "none",
+    "outFile": "../build/test.js",
+    "rootDir": "..",
+    "strict": true,
+    "strictNullChecks": false,
+    "ignoreDeprecations": "6.0"
+  },
+  "files": ["../src/engine.ts", "../src/line1.ts", "sim.test.ts"]
+}

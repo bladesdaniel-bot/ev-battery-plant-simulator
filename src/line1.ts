@@ -1,0 +1,49 @@
+// Line 1: battery pack assembly. Line 2 gets its own file and a ConnectionDef in PLANT_CONNECTIONS.
+const LINE1: LineDef = {
+  id: 'line1', short: 'L1', name: 'Line 1: Battery pack assembly',
+  unitNames: { M: 'Module', P: 'Pack' }, finalPrefix: 'P', idealCycle: 34,
+  components: {
+    module: { label: 'Modules', cap: 6 },
+    bottom: { label: 'Bottom plates', cap: 6 },
+    side: { label: 'Side covers', cap: 12 },
+    top: { label: 'Top plates', cap: 6 },
+  },
+  lanes: [
+    { name: 'Module subassembly', note: 'Cells are tested, stacked and welded into a module, then checked before it goes to Module install.' },
+    { name: 'Component feeders', note: 'Bottom plates, side covers and top plates are kitted and delivered to their stations on the pack line.', feeders: true },
+    { name: 'Pack assembly', note: 'Each pack gets a bottom plate, a module, two side covers, an adhesive seal bead and a top plate, then an end-of-line test. The top plate must go on within the 5-minute adhesive open time.' },
+  ],
+  stations: [
+    { id: 'intake', lane: 0, name: 'Cell intake', ct: 18, src: { prefix: 'M' }, out: { to: 'test' },
+      introduce: { tag: 'cellDefect', rate: 0.02 }, role: 'Loads cells for one module. About 2% of incoming cells are bad.' },
+    { id: 'test', lane: 0, name: 'Cell test', ct: 24, out: { to: 'stack' },
+      inspect: { tag: 'cellDefect', reworkShare: 0, scrapMsg: 'cells failed test' }, role: 'Tests cells. Failures are scrapped.' },
+    { id: 'stack', lane: 0, name: 'Module stacking', ct: 30, robot: true, out: { to: 'weld' }, role: 'Robot stacks cells into a module.' },
+    { id: 'weld', lane: 0, name: 'Busbar weld', ct: 34, robot: true, out: { to: 'mcheck' },
+      introduce: { tag: 'weldDefect', rate: 0.008, wearPerCycle: 0.00035, warnAt: 0.04, warnMsg: 'Weld defect risk above 4%. Dress the weld tip.' },
+      service: { label: 'Dress weld tip', stop: 60, doneMsg: 'Weld tip dressed, defect risk reset' },
+      role: 'Robot welds busbars. The tip wears with every weld, so defect risk climbs until it is dressed.' },
+    { id: 'mcheck', lane: 0, name: 'Module check', ct: 22, out: { to: 'modinst', comp: 'module' },
+      inspect: { tag: 'weldDefect', reworkTo: 'weld', reworkShare: 0.65, reworkMsg: 'weld defect, sent back to Busbar weld', scrapMsg: 'weld defect not repairable' },
+      role: 'Inspects welds. Failures go back to Busbar weld.' },
+    { id: 'fbottom', lane: 1, name: 'Bottom plate feed', ct: 25, src: {}, out: { to: 'bottom', comp: 'bottom' }, role: 'Delivers bottom plates to Bottom plate load.' },
+    { id: 'fside', lane: 1, name: 'Side cover feed', ct: 15, src: {}, per: 2, out: { to: 'side', comp: 'side' }, role: 'Delivers side covers to Side covers, 2 per pack.' },
+    { id: 'ftop', lane: 1, name: 'Top plate feed', ct: 25, src: {}, out: { to: 'top', comp: 'top' }, role: 'Delivers top plates to Top plate install.' },
+    { id: 'bottom', lane: 2, name: 'Bottom plate load', ct: 22, src: { prefix: 'P' }, needs: { bottom: 1 }, out: { to: 'modinst' }, role: 'Starts a new pack on a bottom plate.' },
+    { id: 'modinst', lane: 2, name: 'Module install', ct: 30, robot: true, needs: { module: 1 }, out: { to: 'side' }, role: 'Robot sets a module into the pack.' },
+    { id: 'side', lane: 2, name: 'Side covers', ct: 28, needs: { side: 2 }, out: { to: 'glue' }, role: 'Fits two side covers per pack.' },
+    { id: 'glue', lane: 2, name: 'Adhesive dispense', ct: 26, robot: true, out: { to: 'top' }, startTimer: 'adhesive',
+      consumable: { label: 'Adhesive drum', capacity: 150, perCycle: 1, changeTime: 180, warnAt: 0.15 },      role: 'Robot dispenses the seal bead. The top plate must go on within 5 minutes or the pack is re-glued.' },
+    { id: 'top', lane: 2, name: 'Top plate install', ct: 32, robot: true, needs: { top: 1 }, out: { to: 'eol' },
+      checkTimer: { timer: 'adhesive', limit: 300, reworkTo: 'glue', msg: 'adhesive open time exceeded' },
+      introduce: { tag: 'sealLeak', rate: 0.015, firstPassOnly: true },
+      role: 'Fits the top plate. Packs whose adhesive is past open time go back to be re-glued.' },
+    { id: 'eol', lane: 2, name: 'End-of-line test', ct: 28, out: { to: 'pack' },
+      inspect: { tag: 'sealLeak', reworkTo: 'glue', reworkShare: 0.8, reworkMsg: 'seal leak, sent back to Adhesive dispense', scrapMsg: 'seal leak not repairable' },
+      role: 'Leak and electrical test. Seal failures go back to Adhesive dispense.' },
+    { id: 'pack', lane: 2, name: 'Pack out', ct: 20, out: { ship: true }, role: 'Finished packs leave the line. When Line 2 is added, this feeds it.' },
+  ],
+};
+
+const PLANT_LINES: LineDef[] = [LINE1];
+const PLANT_CONNECTIONS: ConnectionDef[] = [];
