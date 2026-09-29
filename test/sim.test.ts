@@ -53,4 +53,11 @@ function check(name: string, ok: boolean, info = '') { console.log(`${ok ? 'PASS
   check('coolant tote gets changed by the tech', b.byId.fill.plannedT > 0);
   check('never more vehicles than packs sent', b.good <= a.good);
 }
+{
+  const p = new Plant(PLANT_LINES, PLANT_CONNECTIONS); p.rand = seeded(6); run(p, 4);
+  const [, b, c] = p.lines;
+  check('Line 3 ships vehicles from Line 2', c.good > 250, `L2 sent=${b.good} L3 shipped=${c.good}`);
+  check('never more shipped than Line 2 sent', c.good <= b.good);
+  check('fluid tote gets changed by the tech', c.byId.fluids.plannedT > 0);
+}
 process.exit(fails ? 1 : 0);

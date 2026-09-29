@@ -66,7 +66,10 @@ button:disabled{opacity:.45;cursor:default}
   .kpi .v{font-size:30px}
 }
 .grid{display:grid;gap:14px;margin-top:6px;grid-template-columns:minmax(0,1fr);grid-template-areas:"plant" "side" "table"}
-@media (min-width:980px){ .grid{grid-template-columns:minmax(0,1fr) 330px;grid-template-areas:"plant side" "table side"} }
+@media (min-width:980px){
+  .grid{grid-template-columns:minmax(0,1fr) 330px;grid-template-areas:"plant side" "table side"}
+  .side{position:sticky;top:8px;align-self:start;max-height:calc(100vh - 16px);overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
+}
 .side{grid-area:side;display:flex;flex-direction:column;gap:14px;min-width:0}
 .panel{background:var(--panel);border:1px solid var(--rule);padding:14px;min-width:0}
 h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:21px;font-weight:600;margin:0 0 6px;line-height:1.15}
@@ -624,7 +627,7 @@ const LINE1 = {
         { id: 'pack', lane: 2, name: 'Pack out', ct: 20, out: { export: 'l1-l2' }, role: 'Sends finished packs to Line 2.' },
     ],
 };
-// Line 2: pack finishing and vehicle integration. Receives finished packs from Line 1.
+// Line 2: pack finishing and vehicle integration. Receives packs from Line 1, sends vehicles to Line 3.
 const LINE2 = {
     id: 'line2', short: 'L2', name: 'Line 2: Pack finishing and vehicle integration',
     unitNames: { P: 'Pack', V: 'Vehicle' }, finalPrefix: 'V', idealCycle: 33,
@@ -666,12 +669,54 @@ const LINE2 = {
         { id: 'fcheck', lane: 2, name: 'Vehicle function check', ct: 30, out: { to: 'vout' },
             inspect: { tag: 'coolantLeak', reworkTo: 'connect', reworkShare: 0.8, reworkMsg: 'coolant leak, sent back to HV and coolant connect', scrapMsg: 'leak not repairable on the line' },
             role: 'Powers up the vehicle and checks for leaks. Leaks go back to HV and coolant connect.' },
-        { id: 'vout', lane: 2, name: 'Vehicle out', ct: 20, out: { ship: true }, role: 'Finished vehicles leave the line.' },
+        { id: 'vout', lane: 2, name: 'Vehicle out', ct: 20, out: { export: 'l2-l3' }, role: 'Sends finished vehicles to Line 3.' },
     ],
 };
-const PLANT_LINES = [LINE1, LINE2];
+// Line 3: final trim and quality audit. Receives vehicles from Line 2.
+const LINE3 = {
+    id: 'line3', short: 'L3', name: 'Line 3: Final trim and quality audit',
+    unitNames: { V: 'Vehicle' }, finalPrefix: 'V', idealCycle: 33,
+    components: {
+        seats: { label: 'Seat sets', cap: 6 },
+        trimkit: { label: 'Trim kits', cap: 6 },
+        wheels: { label: 'Wheel sets', cap: 6 },
+    },
+    lanes: [
+        { name: 'Final trim', note: 'Vehicles from Line 2 get seats, interior trim, wheels and fluids.' },
+        { name: 'Component feeders', note: 'Seat sets, trim kits and wheel sets are sequenced and delivered to their stations.', feeders: true },
+        { name: 'Quality audit', note: 'Panels, trim and wheel torque are checked, then a final audit before the vehicle ships.' },
+    ],
+    stations: [
+        { id: 'vreceive', lane: 0, name: 'Vehicle receive', ct: 20, out: { to: 'seats' }, role: 'Takes vehicles from the Line 2 transfer buffer.' },
+        { id: 'seats', lane: 0, name: 'Seat install', ct: 30, robot: true, needs: { seats: 1 }, out: { to: 'trim' },
+            role: 'Robot loads the seats through the door opening and they are bolted down.' },
+        { id: 'trim', lane: 0, name: 'Interior trim', ct: 28, needs: { trimkit: 1 }, out: { to: 'wheels' },
+            introduce: { tag: 'trimGap', rate: 0.015, firstPassOnly: true },
+            role: 'Fits door panels, carpets and headliner. About 1.5% have a gap or loose clip.' },
+        { id: 'wheels', lane: 0, name: 'Wheels and tires', ct: 26, robot: true, needs: { wheels: 1 }, out: { to: 'fluids' },
+            introduce: { tag: 'torqueMiss', rate: 0.01, firstPassOnly: true },
+            role: 'Mounts wheels and runs the lug nuts down. About 1% miss their torque value.' },
+        { id: 'fluids', lane: 0, name: 'Fluid fill', ct: 24, out: { to: 'panel' },
+            consumable: { label: 'Fluid tote', capacity: 140, perCycle: 1, changeTime: 180, warnAt: 0.15 },
+            role: 'Fills brake and washer fluid. When the tote is empty, the station stops until a tech changes it.' },
+        { id: 'fseats', lane: 1, name: 'Seat feed', ct: 25, src: {}, out: { to: 'seats', comp: 'seats' }, role: 'Delivers seat sets to Seat install.' },
+        { id: 'ftrim', lane: 1, name: 'Trim kit feed', ct: 25, src: {}, out: { to: 'trim', comp: 'trimkit' }, role: 'Delivers trim kits to Interior trim.' },
+        { id: 'fwheels', lane: 1, name: 'Wheel set feed', ct: 25, src: {}, out: { to: 'wheels', comp: 'wheels' }, role: 'Delivers wheel sets to Wheels and tires.' },
+        { id: 'panel', lane: 2, name: 'Panel and trim audit', ct: 30, out: { to: 'torque' },
+            inspect: { tag: 'trimGap', reworkTo: 'trim', reworkShare: 0.9, reworkMsg: 'trim gap found, sent back to Interior trim', scrapMsg: 'sent to off-line repair' },
+            role: 'Checks panel gaps and interior fit. Problems go back to Interior trim.' },
+        { id: 'torque', lane: 2, name: 'Torque audit', ct: 26, out: { to: 'audit' },
+            inspect: { tag: 'torqueMiss', reworkTo: 'wheels', reworkShare: 1, reworkMsg: 'wheel torque low, sent back to Wheels and tires', scrapMsg: 'sent to off-line repair' },
+            role: 'Verifies lug nut torque. Misses go back to Wheels and tires.' },
+        { id: 'audit', lane: 2, name: 'Final quality audit', ct: 33, out: { to: 'ship' },
+            role: 'Walk-around inspection and paperwork before release.' },
+        { id: 'ship', lane: 2, name: 'Ship', ct: 20, out: { ship: true }, role: 'Released vehicles leave the plant.' },
+    ],
+};
+const PLANT_LINES = [LINE1, LINE2, LINE3];
 const PLANT_CONNECTIONS = [
     { id: 'l1-l2', label: 'Pack transfer, Line 1 to Line 2', fromLine: 'line1', toLine: 'line2', toStation: 'receive', capacity: 8 },
+    { id: 'l2-l3', label: 'Vehicle transfer, Line 2 to Line 3', fromLine: 'line2', toLine: 'line3', toStation: 'vreceive', capacity: 6 },
 ];
 // Dashboard: renders every line in the plant, a station panel, stations table, lost-time Pareto and event log.
 const $ = (s) => document.querySelector(s);

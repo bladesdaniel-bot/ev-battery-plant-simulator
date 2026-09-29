@@ -5,5 +5,5 @@
     "strict": true, "strictNullChecks": false, "strictPropertyInitialization": false,
     "noUnusedLocals": true, "removeComments": false, "ignoreDeprecations": "6.0"
   },
-  "files": ["src/engine.ts", "src/line1.ts", "src/line2.ts", "src/ui.ts"]
+  "files": ["src/engine.ts", "src/line1.ts", "src/line2.ts", "src/line3.ts", "src/ui.ts"]
 }

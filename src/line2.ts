@@ -1,4 +1,4 @@
-// Line 2: pack finishing and vehicle integration. Receives finished packs from Line 1.
+// Line 2: pack finishing and vehicle integration. Receives packs from Line 1, sends vehicles to Line 3.
 const LINE2: LineDef = {
   id: 'line2', short: 'L2', name: 'Line 2: Pack finishing and vehicle integration',
   unitNames: { P: 'Pack', V: 'Vehicle' }, finalPrefix: 'V', idealCycle: 33,
@@ -40,11 +40,6 @@ const LINE2: LineDef = {
     { id: 'fcheck', lane: 2, name: 'Vehicle function check', ct: 30, out: { to: 'vout' },
       inspect: { tag: 'coolantLeak', reworkTo: 'connect', reworkShare: 0.8, reworkMsg: 'coolant leak, sent back to HV and coolant connect', scrapMsg: 'leak not repairable on the line' },
       role: 'Powers up the vehicle and checks for leaks. Leaks go back to HV and coolant connect.' },
-    { id: 'vout', lane: 2, name: 'Vehicle out', ct: 20, out: { ship: true }, role: 'Finished vehicles leave the line.' },
+    { id: 'vout', lane: 2, name: 'Vehicle out', ct: 20, out: { export: 'l2-l3' }, role: 'Sends finished vehicles to Line 3.' },
   ],
 };
-
-const PLANT_LINES: LineDef[] = [LINE1, LINE2];
-const PLANT_CONNECTIONS: ConnectionDef[] = [
-  { id: 'l1-l2', label: 'Pack transfer, Line 1 to Line 2', fromLine: 'line1', toLine: 'line2', toStation: 'receive', capacity: 8 },
-];
