@@ -184,6 +184,7 @@ footer{color:var(--muted);font-size:13px;margin:18px 0 8px;max-width:75ch}
   </header>
   <div class="controls">
     <button class="primary" id="runBtn">Pause</button>
+    <button id="autoBtn" aria-pressed="false" title="Auto crew clears faults, does maintenance and tunes cycle times">Auto: off</button>
     <div class="seg" role="group" aria-label="Simulation speed">
       <button data-speed="1">1×</button><button data-speed="10">10×</button><button data-speed="60">60×</button>
     </div>
@@ -193,6 +194,7 @@ footer{color:var(--muted);font-size:13px;margin:18px 0 8px;max-width:75ch}
       <input type="range" id="target" min="60" max="150" step="5" value="100">
       <span class="muted" id="taktOut">takt 36.0 s</span>
     </div>
+    <button id="driftBtn" title="Silently degrades a measured station. Only the SPC monitor can see it.">Inject drift</button>
     <button id="resetBtn">Reset shift</button>
   </div>
   <div class="grid">

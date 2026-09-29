@@ -10,6 +10,7 @@ interface InspectDef { tag: string; reworkTo?: string; reworkShare: number; rewo
 interface TimerCheckDef { timer: string; limit: number; reworkTo: string; msg: string }
 interface ConsumableDef { label: string; capacity: number; perCycle: number; changeTime: number; warnAt: number }
 interface ServiceDef { label: string; stop: number; doneMsg: string }
+interface MeasureDef { char: string; target: number; sigma: number; wearDrift?: number; lowLevelDrift?: number }
 
 interface StationDef {
   id: string; lane: number; name: string; ct: number; robot?: boolean; role?: string;
@@ -23,6 +24,7 @@ interface StationDef {
   checkTimer?: TimerCheckDef;         // part must arrive before the timer limit
   consumable?: ConsumableDef;         // e.g. adhesive drum
   service?: ServiceDef;               // e.g. clean laser optics (resets wear)
+  measure?: MeasureDef;               // reports a measured value each cycle (for SPC)
 }
 interface LaneDef { name: string; note: string; feeders?: boolean }
 interface LineDef {
@@ -38,8 +40,11 @@ interface Part {
   rw?: boolean; route?: Route | null; back?: string; msg?: string;
 }
 interface LogEntry { t: number; msg: string; kind: string; line?: string }
+interface MeasurementEvent { station: string; characteristic: string; value: number; simTime: number }
 
 const QUEUE_CAP = 6, REWORK_CAP = 3;
+const DRIFT_RATE = 0.08;   // hidden drift, in sigmas per cycle
+const PURGE_STOP = 45;     // seconds for the crew to correct a drifting station with no service action
 
 class Station {
   part: Part = null; prog = 0; state: RunState = 'starved'; reason = 'main';
@@ -47,6 +52,7 @@ class Station {
   starvedBy: Dict<number> = {}; done = 0; pass = 0; defects = 0;
   buf: Part[] = []; rwq: Part[] = []; comps: Dict<number> = {}; qcap = QUEUE_CAP;
   wear = 0; warned = false; level = 0; ct: number; ct0: number; per: number; needs: Dict<number>;
+  drift = 0; driftRate = 0; // hidden process drift: only visible in measurements
   constructor(public def: StationDef, public line: Line) {
     this.ct = this.ct0 = def.ct; this.per = def.per || 1; this.needs = def.needs || {};
     for (const k in this.needs) this.comps[k] = 0;
@@ -80,7 +86,7 @@ class Line {
   clearFault(s: Station) { if (s.fault > 0) { s.fault = 0; this.plant.log(`${s.name} fault cleared by operator`, '', this); } }
   service(s: Station) {
     if (!s.def.service) return;
-    s.wear = 0; s.warned = false;
+    s.wear = 0; s.warned = false; s.drift = 0; s.driftRate = 0;
     this.plant.log(s.def.service.doneMsg, '', this);
     this.fault(s, s.def.service.stop, true, s.def.service.label.toLowerCase());
   }
@@ -91,7 +97,20 @@ class Line {
   }
   defectRate(s: Station) { const I = s.def.introduce; return I ? I.rate + s.wear * (I.wearPerCycle || 0) : 0; }
 
-    private canStart(s: Station): string | null {
+  // Starts a silent process drift. No fault, no alarm: only the station's measurements change.
+  injectDrift(s: Station) {
+    if (!s.def.measure) return;
+    s.driftRate = DRIFT_RATE;
+    this.plant.log(`Hidden drift started at ${s.name}. No alarm, only SPC can see it.`, '', this);
+  }
+  // The crew's fix for a drifting station: its service action if it has one, otherwise a purge stop.
+  correctDrift(s: Station) {
+    if (s.def.service) { this.service(s); return; }
+    s.drift = 0; s.driftRate = 0;
+    this.fault(s, PURGE_STOP, true, 'crew purging and recalibrating');
+  }
+
+  private canStart(s: Station): string | null {
     const next = s.rwq[0] || (s.def.src ? null : s.buf[0]);
     if (!next && !s.def.src) return 'main';
     if (s.def.consumable && s.level < s.def.consumable.perCycle) return 'consumable';
@@ -128,6 +147,15 @@ class Line {
       if (P.rand() < this.defectRate(s)) { p.tags[I.tag] = true; s.defects++; }
       if (I.warnAt && !s.warned && this.defectRate(s) > I.warnAt) { s.warned = true; P.log(I.warnMsg, 'warn', this); }
     }
+    const M = d.measure;
+    if (M) s.drift += s.driftRate;
+    if (M && P.onMeasure) {
+      let mean = M.target + s.wear * (M.wearDrift || 0) + s.drift * M.sigma;
+      if (M.lowLevelDrift && d.consumable) mean += M.lowLevelDrift * (1 - s.level / d.consumable.capacity);
+      const noise = Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+      const value = Math.round((mean + noise * M.sigma) * 1000) / 1000;
+      P.onMeasure({ station: `${this.def.short}-${d.id}`, characteristic: M.char, value, simTime: P.t });
+    }
     const X = d.inspect;
     if (X && p.tags[X.tag]) {
       if (X.reworkTo && P.rand() < X.reworkShare) { p.route = 'rework'; p.back = X.reworkTo; p.msg = X.reworkMsg; }
@@ -158,7 +186,6 @@ class Line {
         const c = P.connection(d.out.export);
         if (!c) { this.recordOut(p); return true; } // not connected (line run on its own): ship it
         const t = P.station(c.toLine, c.toStation);
-
         if (t.buf.length >= t.qcap) return false;
         this.recordOut(p); p.route = null; p.rw = false; t.buf.push(p); return true;
       }
@@ -207,7 +234,7 @@ class Line {
     while (this.outTimes.length && this.outTimes[0] < cut) this.outTimes.shift();
   }
 
-    // ---- metrics ----
+  // ---- metrics ----
   oee(s: Station) {
     const t = this.plant.t || 1, up = Math.max(0, t - s.faultT - s.plannedT);
     const A = up / t, Pf = up > 0 ? Math.min(1, s.done * s.ct0 / up) : 0;
@@ -228,6 +255,7 @@ class Plant {
   t = 0; lines: Line[]; byId: Dict<Line> = {}; logs: LogEntry[] = []; logVersion = 0;
   randomFaults = true; targetJPH = 100;
   rand: () => number = Math.random;
+  onMeasure: ((m: MeasurementEvent) => void) | null = null; // set by the UI to forward readings to the SPC monitor
   constructor(defs: LineDef[], public connections: ConnectionDef[] = []) {
     this.lines = defs.map(d => new Line(d, this));
     this.lines.forEach(l => this.byId[l.def.id] = l);

@@ -1,7 +1,8 @@
 // Dashboard: renders every line in the plant, a station panel, stations table, lost-time Pareto and event log.
 const $ = (s: string) => document.querySelector(s) as HTMLElement;
 let plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS);
-let running = true, speed = 10;
+connectSpc(plant);
+let running = true, speed = 10, autoOn = false;
 let sel = { li: 0, si: plant.lines[0].st.findIndex(s => s.id === 'glue') };
 let selShown = '', logShown = -1;
 
@@ -181,6 +182,7 @@ function renderUI() {
     logShown = plant.logVersion;
   }
   $('#runBtn').textContent = running ? 'Pause' : 'Run';
+  const ab = $('#autoBtn'); ab.textContent = autoOn ? 'Auto: on' : 'Auto: off'; ab.setAttribute('aria-pressed', String(autoOn));
   document.querySelectorAll<HTMLElement>('[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === speed)));
 }
 
@@ -190,6 +192,17 @@ function refresh() { renderUI(); updateLine(); }
 $('#tbody').addEventListener('click', e => { const tr = (e.target as HTMLElement).closest('tr'); if (tr && tr.dataset.i) select(+tr.dataset.li, +tr.dataset.i); });
 $('#tbody').addEventListener('keydown', e => { const t = e.target as HTMLElement; if ((e.key === 'Enter' || e.key === ' ') && t.dataset.i) { e.preventDefault(); select(+t.dataset.li, +t.dataset.i); } });
 $('#runBtn').onclick = () => { running = !running; renderUI(); };
+$('#autoBtn').onclick = () => {
+  autoOn = !autoOn;
+  plant.log(autoOn ? 'Auto crew on: faults, maintenance and cycle times handled automatically' : 'Auto crew off');
+  renderUI();
+};
+$('#driftBtn').onclick = () => {
+  const cur = selStation();
+  const pool = plant.lines.flatMap(l => l.st).filter(s => s.def.measure && s.driftRate === 0);
+  const s = cur.def.measure && cur.driftRate === 0 ? cur : pool[Math.floor(Math.random() * pool.length)];
+  if (s) { s.line.injectDrift(s); refresh(); }
+};
 document.querySelectorAll<HTMLElement>('[data-speed]').forEach(b => b.onclick = () => { speed = +b.dataset.speed; renderUI(); });
 ($('#randFaults') as HTMLInputElement).onchange = e => { plant.randomFaults = (e.target as HTMLInputElement).checked; plant.log(plant.randomFaults ? 'Random faults on' : 'Random faults off'); };
 $('#target').oninput = e => { plant.targetJPH = +(e.target as HTMLInputElement).value; $('#targetOut').textContent = String(plant.targetJPH); $('#taktOut').textContent = `takt ${plant.takt().toFixed(1)} s`; refresh(); };
@@ -202,14 +215,14 @@ $('#serviceBtn').onclick = () => { const s = selStation(); s.line.service(s); re
 $('#consumeBtn').onclick = () => { const s = selStation(); s.line.changeConsumable(s); refresh(); };
 $('#resetBtn').onclick = () => {
   const rf = plant.randomFaults, tj = plant.targetJPH;
-  plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS); plant.randomFaults = rf; plant.targetJPH = tj;
+  plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS); plant.randomFaults = rf; plant.targetJPH = tj; connectSpc(plant);
   plant.log(`Shift started. Target ${tj}/hr.`); build(); logShown = -1; selShown = ''; refresh();
 };
 
 let last = performance.now(), uiT = 0, lineT = 0;
 function frame(now: number) {
   const real = Math.min((now - last) / 1000, 0.25); last = now;
-  if (running) { let sim = real * speed; while (sim > 0) { const d = Math.min(0.5, sim); plant.step(d); sim -= d; } }
+  if (running) { let sim = real * speed; while (sim > 0) { const d = Math.min(0.5, sim); plant.step(d); if (autoOn) autoCrew(plant, d); sim -= d; } }
   lineT += real; if (lineT > 0.1) { lineT = 0; updateLine(); }
   uiT += real; if (uiT > 0.3) { uiT = 0; renderUI(); }
   requestAnimationFrame(frame);

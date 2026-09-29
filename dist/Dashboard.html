@@ -184,6 +184,7 @@ footer{color:var(--muted);font-size:13px;margin:18px 0 8px;max-width:75ch}
   </header>
   <div class="controls">
     <button class="primary" id="runBtn">Pause</button>
+    <button id="autoBtn" aria-pressed="false" title="Auto crew clears faults, does maintenance and tunes cycle times">Auto: off</button>
     <div class="seg" role="group" aria-label="Simulation speed">
       <button data-speed="1">1×</button><button data-speed="10">10×</button><button data-speed="60">60×</button>
     </div>
@@ -193,6 +194,7 @@ footer{color:var(--muted);font-size:13px;margin:18px 0 8px;max-width:75ch}
       <input type="range" id="target" min="60" max="150" step="5" value="100">
       <span class="muted" id="taktOut">takt 36.0 s</span>
     </div>
+    <button id="driftBtn" title="Silently degrades a measured station. Only the SPC monitor can see it.">Inject drift</button>
     <button id="resetBtn">Reset shift</button>
   </div>
   <div class="grid">
@@ -240,6 +242,8 @@ footer{color:var(--muted);font-size:13px;margin:18px 0 8px;max-width:75ch}
 // Line simulator engine: config-driven stations, lines, and a plant that links lines together.
 // Deterministic fixed-step simulation (call plant.step(dt) with simulated seconds).
 const QUEUE_CAP = 6, REWORK_CAP = 3;
+const DRIFT_RATE = 0.08; // hidden drift, in sigmas per cycle
+const PURGE_STOP = 45; // seconds for the crew to correct a drifting station with no service action
 class Station {
     constructor(def, line) {
         this.def = def;
@@ -266,6 +270,8 @@ class Station {
         this.wear = 0;
         this.warned = false;
         this.level = 0;
+        this.drift = 0;
+        this.driftRate = 0; // hidden process drift: only visible in measurements
         this.ct = this.ct0 = def.ct;
         this.per = def.per || 1;
         this.needs = def.needs || {};
@@ -319,6 +325,8 @@ class Line {
             return;
         s.wear = 0;
         s.warned = false;
+        s.drift = 0;
+        s.driftRate = 0;
         this.plant.log(s.def.service.doneMsg, '', this);
         this.fault(s, s.def.service.stop, true, s.def.service.label.toLowerCase());
     }
@@ -331,6 +339,23 @@ class Line {
         this.fault(s, c.changeTime, true, `tech changing ${c.label.toLowerCase()}`);
     }
     defectRate(s) { const I = s.def.introduce; return I ? I.rate + s.wear * (I.wearPerCycle || 0) : 0; }
+    // Starts a silent process drift. No fault, no alarm: only the station's measurements change.
+    injectDrift(s) {
+        if (!s.def.measure)
+            return;
+        s.driftRate = DRIFT_RATE;
+        this.plant.log(`Hidden drift started at ${s.name}. No alarm, only SPC can see it.`, '', this);
+    }
+    // The crew's fix for a drifting station: its service action if it has one, otherwise a purge stop.
+    correctDrift(s) {
+        if (s.def.service) {
+            this.service(s);
+            return;
+        }
+        s.drift = 0;
+        s.driftRate = 0;
+        this.fault(s, PURGE_STOP, true, 'crew purging and recalibrating');
+    }
     canStart(s) {
         const next = s.rwq[0] || (s.def.src ? null : s.buf[0]);
         if (!next && !s.def.src)
@@ -391,6 +416,17 @@ class Line {
                 s.warned = true;
                 P.log(I.warnMsg, 'warn', this);
             }
+        }
+        const M = d.measure;
+        if (M)
+            s.drift += s.driftRate;
+        if (M && P.onMeasure) {
+            let mean = M.target + s.wear * (M.wearDrift || 0) + s.drift * M.sigma;
+            if (M.lowLevelDrift && d.consumable)
+                mean += M.lowLevelDrift * (1 - s.level / d.consumable.capacity);
+            const noise = Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+            const value = Math.round((mean + noise * M.sigma) * 1000) / 1000;
+            P.onMeasure({ station: `${this.def.short}-${d.id}`, characteristic: M.char, value, simTime: P.t });
         }
         const X = d.inspect;
         if (X && p.tags[X.tag]) {
@@ -560,6 +596,7 @@ class Plant {
         this.randomFaults = true;
         this.targetJPH = 100;
         this.rand = Math.random;
+        this.onMeasure = null; // set by the UI to forward readings to the SPC monitor
         this.lines = defs.map(d => new Line(d, this));
         this.lines.forEach(l => this.byId[l.def.id] = l);
         connections.forEach(c => { this.station(c.toLine, c.toStation).qcap = c.capacity; });
@@ -606,7 +643,9 @@ const LINE1 = {
         { id: 'weld', lane: 0, name: 'Busbar weld', ct: 34, robot: true, out: { to: 'mcheck' },
             introduce: { tag: 'weldDefect', rate: 0.008, wearPerCycle: 0.00035, warnAt: 0.04, warnMsg: 'Weld defect risk above 4%. Clean the laser optics.' },
             service: { label: 'Clean laser optics', stop: 60, doneMsg: 'Laser optics cleaned, defect risk reset' },
-            role: 'Robot laser-welds busbars to the cells. Spatter builds up on the optics cover glass, so defect risk climbs until it is cleaned.' }, { id: 'mcheck', lane: 0, name: 'Module check', ct: 22, out: { to: 'modinst', comp: 'module' },
+            measure: { char: 'weld_resistance_uohm', target: 50, sigma: 1, wearDrift: 0.03 },
+            role: 'Robot laser-welds busbars to the cells. Spatter builds up on the optics cover glass, so defect risk climbs until it is cleaned.' },
+        { id: 'mcheck', lane: 0, name: 'Module check', ct: 22, out: { to: 'modinst', comp: 'module' },
             inspect: { tag: 'weldDefect', reworkTo: 'weld', reworkShare: 0.65, reworkMsg: 'weld defect, sent back to Busbar weld', scrapMsg: 'weld defect not repairable' },
             role: 'Inspects welds. Failures go back to Busbar weld.' },
         { id: 'fbottom', lane: 1, name: 'Bottom plate feed', ct: 25, src: {}, out: { to: 'bottom', comp: 'bottom' }, role: 'Delivers bottom plates to Bottom plate load.' },
@@ -616,7 +655,9 @@ const LINE1 = {
         { id: 'modinst', lane: 2, name: 'Module install', ct: 30, robot: true, needs: { module: 1 }, out: { to: 'side' }, role: 'Robot sets a module into the pack.' },
         { id: 'side', lane: 2, name: 'Side covers', ct: 28, needs: { side: 2 }, out: { to: 'glue' }, role: 'Fits two side covers per pack.' },
         { id: 'glue', lane: 2, name: 'Adhesive dispense', ct: 26, robot: true, out: { to: 'top' }, startTimer: 'adhesive',
-            consumable: { label: 'Adhesive drum', capacity: 150, perCycle: 1, changeTime: 180, warnAt: 0.15 }, role: 'Robot dispenses the seal bead. The top plate must go on within 5 minutes or the pack is re-glued.' },
+            consumable: { label: 'Adhesive drum', capacity: 150, perCycle: 1, changeTime: 180, warnAt: 0.15 },
+            measure: { char: 'bead_width_mm', target: 4.0, sigma: 0.03, lowLevelDrift: -0.12 },
+            role: 'Robot dispenses the seal bead. The top plate must go on within 5 minutes or the pack is re-glued.' },
         { id: 'top', lane: 2, name: 'Top plate install', ct: 32, robot: true, needs: { top: 1 }, out: { to: 'eol' },
             checkTimer: { timer: 'adhesive', limit: 300, reworkTo: 'glue', msg: 'adhesive open time exceeded' },
             introduce: { tag: 'sealLeak', rate: 0.015, firstPassOnly: true },
@@ -718,10 +759,134 @@ const PLANT_CONNECTIONS = [
     { id: 'l1-l2', label: 'Pack transfer, Line 1 to Line 2', fromLine: 'line1', toLine: 'line2', toStation: 'receive', capacity: 8 },
     { id: 'l2-l3', label: 'Vehicle transfer, Line 2 to Line 3', fromLine: 'line2', toLine: 'line3', toStation: 'vreceive', capacity: 6 },
 ];
+// Connects the simulator to the SPC monitor (spc-monitor, Go service).
+// 1. Forwards every measurement reading to the monitor.
+// 2. While Auto is on, watches the monitor for new rule violations and dispatches the auto crew.
+const SPC_BASE = 'http://localhost:8090';
+const SPC_RETRY_MS = 10000; // pause after a failed request (monitor not running)
+const SPC_POLL_MS = 3000; // how often the crew checks the monitor for alerts
+const SPC_GRACE = 8; // readings to ignore after a fix, so the old pattern doesn't re-trigger
+let spcPausedUntil = 0;
+const spcHandledFrom = {};
+function connectSpc(p) {
+    p.onMeasure = m => {
+        if (Date.now() < spcPausedUntil)
+            return;
+        fetch(SPC_BASE + '/measurements', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ station: m.station, characteristic: m.characteristic, value: m.value }),
+        }).catch(() => { spcPausedUntil = Date.now() + SPC_RETRY_MS; });
+    };
+}
+async function spcPoll() {
+    if (!autoOn || Date.now() < spcPausedUntil)
+        return;
+    try {
+        const series = await (await fetch(SPC_BASE + '/series')).json();
+        for (const sr of series) {
+            const s = spcStation(sr.station);
+            if (!s)
+                continue;
+            const key = sr.station + '|' + sr.characteristic;
+            if (spcHandledFrom[key] == null) {
+                spcHandledFrom[key] = sr.count;
+                continue;
+            } // skip history from before we watched
+            if (s.fault > 0)
+                continue; // crew already busy at this station
+            const q = `station=${encodeURIComponent(sr.station)}&characteristic=${encodeURIComponent(sr.characteristic)}`;
+            const r = await fetch(`${SPC_BASE}/violations?${q}`);
+            if (!r.ok)
+                continue; // still collecting its baseline
+            const body = await r.json();
+            const v = body.violations.find(x => x.index >= spcHandledFrom[key]);
+            if (!v)
+                continue;
+            spcHandledFrom[key] = sr.count + SPC_GRACE;
+            spcDispatch(s, v);
+        }
+    }
+    catch {
+        spcPausedUntil = Date.now() + SPC_RETRY_MS;
+    }
+}
+// Finds the simulator station behind a monitor series name like "L1-weld".
+function spcStation(name) {
+    const [short, id] = name.split('-');
+    const ln = plant.lines.find(l => l.def.short === short);
+    return ln ? ln.byId[id] : null;
+}
+// The crew investigates the alert and fixes the real cause, if there is one.
+function spcDispatch(s, v) {
+    const M = s.def.measure, c = s.def.consumable, ln = s.line;
+    plant.log(`SPC alert at ${s.name}, rule ${v.rule}: ${v.description}. Auto crew investigating.`, 'warn', ln);
+    const wearShift = M ? s.wear * (M.wearDrift || 0) / M.sigma : 0;
+    if (c && s.level < c.capacity * 0.5)
+        ln.changeConsumable(s);
+    else if (s.drift > 0.5 || wearShift > 0.5)
+        ln.correctDrift(s);
+    else
+        plant.log(`Crew found no assignable cause at ${s.name}. Likely a false alarm.`, '', ln);
+}
+setInterval(spcPoll, SPC_POLL_MS);
+// Auto crew: runs the whole plant hands-free when Auto is on.
+const AUTO_RESPONSE = 45; // seconds for the crew to reach a breakdown and get it running
+const AUTO_MIN_CT = 0.85; // stations can be sped up to 85% of their design cycle, no further
+const AUTO_TUNE_EVERY = 5; // seconds between cycle time checks
+const autoDispatched = new Set();
+let autoTuneT = 0;
+function autoCrew(p, dt) {
+    const takt = p.takt();
+    autoTuneT += dt;
+    const tune = autoTuneT >= AUTO_TUNE_EVERY;
+    if (tune)
+        autoTuneT = 0;
+    for (const ln of p.lines)
+        for (const s of ln.st) {
+            // Breakdowns: dispatch the crew once per fault.
+            if (s.fault > 0 && !s.planned) {
+                if (!autoDispatched.has(s)) {
+                    autoDispatched.add(s);
+                    s.fault = Math.min(s.fault, AUTO_RESPONSE);
+                    p.log(`Auto crew dispatched to ${s.name}`, '', ln);
+                }
+                continue;
+            }
+            autoDispatched.delete(s);
+            if (s.fault > 0)
+                continue; // planned stop already in progress
+            // Consumables: change before they run dry.
+            const c = s.def.consumable;
+            if (c && s.level <= c.capacity * c.warnAt) {
+                ln.changeConsumable(s);
+                continue;
+            }
+            // Plant warnings (backup trigger): service when defect risk passes its warning level.
+            const I = s.def.introduce;
+            if (s.def.service && I && I.warnAt && ln.defectRate(s) > I.warnAt) {
+                ln.service(s);
+                continue;
+            }
+            if (tune)
+                autoTuneCycle(s, takt, ln);
+        }
+}
+// Speeds up stations slower than takt (within limits) and returns the rest to their design cycle.
+function autoTuneCycle(s, takt, ln) {
+    let want = s.ct0;
+    if (s.ct0 * s.per > takt)
+        want = Math.max(Math.ceil(s.ct0 * AUTO_MIN_CT), Math.floor(takt / s.per));
+    if (want !== s.ct) {
+        s.ct = want;
+        ln.plant.log(`Auto: ${s.name} cycle time set to ${want} s`, '', ln);
+    }
+}
 // Dashboard: renders every line in the plant, a station panel, stations table, lost-time Pareto and event log.
 const $ = (s) => document.querySelector(s);
 let plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS);
-let running = true, speed = 10;
+connectSpc(plant);
+let running = true, speed = 10, autoOn = false;
 let sel = { li: 0, si: plant.lines[0].st.findIndex(s => s.id === 'glue') };
 let selShown = '', logShown = -1;
 let cards = [];
@@ -952,6 +1117,9 @@ function renderUI() {
         logShown = plant.logVersion;
     }
     $('#runBtn').textContent = running ? 'Pause' : 'Run';
+    const ab = $('#autoBtn');
+    ab.textContent = autoOn ? 'Auto: on' : 'Auto: off';
+    ab.setAttribute('aria-pressed', String(autoOn));
     document.querySelectorAll('[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === speed)));
 }
 function select(li, si) { sel = { li, si }; renderUI(); updateLine(); }
@@ -963,6 +1131,20 @@ $('#tbody').addEventListener('keydown', e => { const t = e.target; if ((e.key ==
     select(+t.dataset.li, +t.dataset.i);
 } });
 $('#runBtn').onclick = () => { running = !running; renderUI(); };
+$('#autoBtn').onclick = () => {
+    autoOn = !autoOn;
+    plant.log(autoOn ? 'Auto crew on: faults, maintenance and cycle times handled automatically' : 'Auto crew off');
+    renderUI();
+};
+$('#driftBtn').onclick = () => {
+    const cur = selStation();
+    const pool = plant.lines.flatMap(l => l.st).filter(s => s.def.measure && s.driftRate === 0);
+    const s = cur.def.measure && cur.driftRate === 0 ? cur : pool[Math.floor(Math.random() * pool.length)];
+    if (s) {
+        s.line.injectDrift(s);
+        refresh();
+    }
+};
 document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { speed = +b.dataset.speed; renderUI(); });
 $('#randFaults').onchange = e => { plant.randomFaults = e.target.checked; plant.log(plant.randomFaults ? 'Random faults on' : 'Random faults off'); };
 $('#target').oninput = e => { plant.targetJPH = +e.target.value; $('#targetOut').textContent = String(plant.targetJPH); $('#taktOut').textContent = `takt ${plant.takt().toFixed(1)} s`; refresh(); };
@@ -978,6 +1160,7 @@ $('#resetBtn').onclick = () => {
     plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS);
     plant.randomFaults = rf;
     plant.targetJPH = tj;
+    connectSpc(plant);
     plant.log(`Shift started. Target ${tj}/hr.`);
     build();
     logShown = -1;
@@ -993,6 +1176,8 @@ function frame(now) {
         while (sim > 0) {
             const d = Math.min(0.5, sim);
             plant.step(d);
+            if (autoOn)
+                autoCrew(plant, d);
             sim -= d;
         }
     }

@@ -22,7 +22,9 @@ const LINE1: LineDef = {
     { id: 'weld', lane: 0, name: 'Busbar weld', ct: 34, robot: true, out: { to: 'mcheck' },
       introduce: { tag: 'weldDefect', rate: 0.008, wearPerCycle: 0.00035, warnAt: 0.04, warnMsg: 'Weld defect risk above 4%. Clean the laser optics.' },
       service: { label: 'Clean laser optics', stop: 60, doneMsg: 'Laser optics cleaned, defect risk reset' },
-      role: 'Robot laser-welds busbars to the cells. Spatter builds up on the optics cover glass, so defect risk climbs until it is cleaned.' },    { id: 'mcheck', lane: 0, name: 'Module check', ct: 22, out: { to: 'modinst', comp: 'module' },
+      measure: { char: 'weld_resistance_uohm', target: 50, sigma: 1, wearDrift: 0.03 },
+      role: 'Robot laser-welds busbars to the cells. Spatter builds up on the optics cover glass, so defect risk climbs until it is cleaned.' },
+    { id: 'mcheck', lane: 0, name: 'Module check', ct: 22, out: { to: 'modinst', comp: 'module' },
       inspect: { tag: 'weldDefect', reworkTo: 'weld', reworkShare: 0.65, reworkMsg: 'weld defect, sent back to Busbar weld', scrapMsg: 'weld defect not repairable' },
       role: 'Inspects welds. Failures go back to Busbar weld.' },
     { id: 'fbottom', lane: 1, name: 'Bottom plate feed', ct: 25, src: {}, out: { to: 'bottom', comp: 'bottom' }, role: 'Delivers bottom plates to Bottom plate load.' },
@@ -32,7 +34,9 @@ const LINE1: LineDef = {
     { id: 'modinst', lane: 2, name: 'Module install', ct: 30, robot: true, needs: { module: 1 }, out: { to: 'side' }, role: 'Robot sets a module into the pack.' },
     { id: 'side', lane: 2, name: 'Side covers', ct: 28, needs: { side: 2 }, out: { to: 'glue' }, role: 'Fits two side covers per pack.' },
     { id: 'glue', lane: 2, name: 'Adhesive dispense', ct: 26, robot: true, out: { to: 'top' }, startTimer: 'adhesive',
-      consumable: { label: 'Adhesive drum', capacity: 150, perCycle: 1, changeTime: 180, warnAt: 0.15 },      role: 'Robot dispenses the seal bead. The top plate must go on within 5 minutes or the pack is re-glued.' },
+      consumable: { label: 'Adhesive drum', capacity: 150, perCycle: 1, changeTime: 180, warnAt: 0.15 },
+      measure: { char: 'bead_width_mm', target: 4.0, sigma: 0.03, lowLevelDrift: -0.12 },
+      role: 'Robot dispenses the seal bead. The top plate must go on within 5 minutes or the pack is re-glued.' },
     { id: 'top', lane: 2, name: 'Top plate install', ct: 32, robot: true, needs: { top: 1 }, out: { to: 'eol' },
       checkTimer: { timer: 'adhesive', limit: 300, reworkTo: 'glue', msg: 'adhesive open time exceeded' },
       introduce: { tag: 'sealLeak', rate: 0.015, firstPassOnly: true },
@@ -43,4 +47,3 @@ const LINE1: LineDef = {
     { id: 'pack', lane: 2, name: 'Pack out', ct: 20, out: { export: 'l1-l2' }, role: 'Sends finished packs to Line 2.' },
   ],
 };
-
