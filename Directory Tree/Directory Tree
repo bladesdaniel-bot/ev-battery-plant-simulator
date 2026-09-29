@@ -1,4 +1,4 @@
-production line ready demonstration/
+EV battery plant simulator/
 ├── .gitignore            # keeps node_modules/ and build/ out of Git
 ├── README.md             # overview, build steps, how to add another line
 ├── package.json          # npm scripts (build, test) and TypeScript version
