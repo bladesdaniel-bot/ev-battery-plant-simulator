@@ -66,7 +66,10 @@ button:disabled{opacity:.45;cursor:default}
   .kpi .v{font-size:30px}
 }
 .grid{display:grid;gap:14px;margin-top:6px;grid-template-columns:minmax(0,1fr);grid-template-areas:"plant" "side" "table"}
-@media (min-width:980px){ .grid{grid-template-columns:minmax(0,1fr) 330px;grid-template-areas:"plant side" "table side"} }
+@media (min-width:980px){
+  .grid{grid-template-columns:minmax(0,1fr) 330px;grid-template-areas:"plant side" "table side"}
+  .side{position:sticky;top:8px;align-self:start;max-height:calc(100vh - 16px);overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
+}
 .side{grid-area:side;display:flex;flex-direction:column;gap:14px;min-width:0}
 .panel{background:var(--panel);border:1px solid var(--rule);padding:14px;min-width:0}
 h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:21px;font-weight:600;margin:0 0 6px;line-height:1.15}
