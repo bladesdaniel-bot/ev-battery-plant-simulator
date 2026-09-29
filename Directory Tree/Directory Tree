@@ -7,14 +7,14 @@ production line ready demonstration/
 ├── src/
 │   ├── engine.ts         # simulation core: Station, Line, Plant
 │   ├── line1.ts          # Line 1 station layout (config data)
-│   ├── line2.ts          # Line 2 station layout, plant line list and connection
+│   ├── line2.ts          # Line 2 station layout (config data)
+│   ├── line3.ts          # Line 3 station layout, plant line list and connections
 │   ├── ui.ts             # dashboard rendering and controls
 │   └── index.html        # page shell the build inlines the app into
 ├── test/
-│   ├── sim.test.ts       # headless tests for both lines and the transfer
+│   ├── sim.test.ts       # headless tests for all three lines and the transfers
 │   └── tsconfig.json     # compiler settings for the tests
 ├── dist/
 │   └── index.html        # built simulator (open this in a browser)
 └── Directory Tree/
     └── Directory Tree    # this annotated project tree
-    └── Directory Tree    # this annotated project tree                     ← edit
