@@ -37,9 +37,9 @@ Full annotated tree: [Directory Tree](Directory%20Tree/Directory%20Tree)
 Requires Node.js (18 or newer). From the project folder:
 
     npm install       # one time, installs TypeScript locally
-    npm run build     # compiles, runs tests, writes dist/index.html
+    npm run build     # compiles, runs tests, writes dist/Dashboard.html
 
-Open `dist/index.html` in a browser to run the simulator.
+Open `dist/Dashboard.html` in a browser to run the simulator.
 
 ## Adding another line
 
