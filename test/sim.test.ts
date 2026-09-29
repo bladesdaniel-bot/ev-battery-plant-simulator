@@ -46,4 +46,11 @@ function check(name: string, ok: boolean, info = '') { console.log(`${ok ? 'PASS
   p.lines[1].fault(p.lines[1].byId.in, 1200, false); run(p, 0.25);
   check('a stopped L2 backs up L1 (blocked)', a.byId.pack.blockedT > 60, `blocked=${a.byId.pack.blockedT.toFixed(0)}s`);
 }
+{
+  const p = new Plant(PLANT_LINES, PLANT_CONNECTIONS); p.rand = seeded(5); run(p, 4);
+  const [a, b] = p.lines;
+  check('real Line 2 builds vehicles from Line 1 packs', b.good > 250, `L1 packs=${a.good} L2 vehicles=${b.good}`);
+  check('coolant tote gets changed by the tech', b.byId.fill.plannedT > 0);
+  check('never more vehicles than packs sent', b.good <= a.good);
+}
 process.exit(fails ? 1 : 0);

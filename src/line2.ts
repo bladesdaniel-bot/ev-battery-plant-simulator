@@ -1,0 +1,50 @@
+// Line 2: pack finishing and vehicle integration. Receives finished packs from Line 1.
+const LINE2: LineDef = {
+  id: 'line2', short: 'L2', name: 'Line 2: Pack finishing and vehicle integration',
+  unitNames: { P: 'Pack', V: 'Vehicle' }, finalPrefix: 'V', idealCycle: 33,
+  components: {
+    harness: { label: 'HV harnesses', cap: 6 },
+    pack: { label: 'Packs', cap: 4 },
+    fasteners: { label: 'Fastener kits', cap: 6 },
+  },
+  lanes: [
+    { name: 'Pack finishing', note: 'Packs from Line 1 get their high-voltage harness and battery software, then a charge and discharge test and a final inspection.' },
+    { name: 'Component feeders', note: 'HV harnesses and fastener kits are kitted and delivered to their stations.', feeders: true },
+    { name: 'Vehicle integration', note: 'Each chassis gets a finished pack bolted underneath, HV and coolant lines connected, coolant filled, then a function check.' },
+  ],
+  stations: [
+    { id: 'receive', lane: 0, name: 'Pack receive', ct: 20, out: { to: 'harness' }, role: 'Takes finished packs from the Line 1 transfer buffer.' },
+    { id: 'harness', lane: 0, name: 'HV harness install', ct: 30, needs: { harness: 1 }, out: { to: 'bms' },
+      introduce: { tag: 'hvConnect', rate: 0.012, firstPassOnly: true },
+      role: 'Fits the high-voltage harness and connectors. About 1% of connections are not fully seated.' },
+    { id: 'bms', lane: 0, name: 'BMS flash', ct: 24, out: { to: 'cdtest' },
+      introduce: { tag: 'flashFail', rate: 0.01, firstPassOnly: true },
+      inspect: { tag: 'flashFail', reworkTo: 'bms', reworkShare: 1, reworkMsg: 'software flash failed, retrying', scrapMsg: 'flash failed' },
+      role: 'Loads the battery management software. A failed flash is retried.' },
+    { id: 'cdtest', lane: 0, name: 'Charge and discharge test', ct: 33, out: { to: 'final' },
+      inspect: { tag: 'hvConnect', reworkTo: 'harness', reworkShare: 0.75, reworkMsg: 'HV connection fault, sent back to HV harness install', scrapMsg: 'HV fault not repairable' },
+      role: 'Cycles the pack and checks the HV connections. Faults go back to HV harness install.' },
+    { id: 'final', lane: 0, name: 'Final inspection', ct: 22, out: { to: 'marry', comp: 'pack' },
+      role: 'Visual and label check. Finished packs go to Pack marriage.' },
+    { id: 'fharness', lane: 1, name: 'HV harness feed', ct: 25, src: {}, out: { to: 'harness', comp: 'harness' }, role: 'Delivers HV harnesses to HV harness install.' },
+    { id: 'ffast', lane: 1, name: 'Fastener kit feed', ct: 25, src: {}, out: { to: 'marry', comp: 'fasteners' }, role: 'Delivers fastener kits to Pack marriage.' },
+    { id: 'chassis', lane: 2, name: 'Chassis load', ct: 22, src: { prefix: 'V' }, out: { to: 'marry' }, role: 'Starts a new vehicle on the line.' },
+    { id: 'marry', lane: 2, name: 'Pack marriage', ct: 32, robot: true, needs: { pack: 1, fasteners: 1 }, out: { to: 'connect' },
+      role: 'Lifts the pack into the underbody and torques the bolts.' },
+    { id: 'connect', lane: 2, name: 'HV and coolant connect', ct: 28, out: { to: 'fill' },
+      introduce: { tag: 'coolantLeak', rate: 0.012, firstPassOnly: true },
+      role: 'Connects the HV lines and coolant hoses to the pack.' },
+    { id: 'fill', lane: 2, name: 'Coolant fill', ct: 26, robot: true, out: { to: 'fcheck' },
+      consumable: { label: 'Coolant tote', capacity: 120, perCycle: 1, changeTime: 180, warnAt: 0.15 },
+      role: 'Fills the pack cooling loop. When the tote is empty, the station stops until a tech changes it.' },
+    { id: 'fcheck', lane: 2, name: 'Vehicle function check', ct: 30, out: { to: 'vout' },
+      inspect: { tag: 'coolantLeak', reworkTo: 'connect', reworkShare: 0.8, reworkMsg: 'coolant leak, sent back to HV and coolant connect', scrapMsg: 'leak not repairable on the line' },
+      role: 'Powers up the vehicle and checks for leaks. Leaks go back to HV and coolant connect.' },
+    { id: 'vout', lane: 2, name: 'Vehicle out', ct: 20, out: { ship: true }, role: 'Finished vehicles leave the line.' },
+  ],
+};
+
+const PLANT_LINES: LineDef[] = [LINE1, LINE2];
+const PLANT_CONNECTIONS: ConnectionDef[] = [
+  { id: 'l1-l2', label: 'Pack transfer, Line 1 to Line 2', fromLine: 'line1', toLine: 'line2', toStation: 'receive', capacity: 8 },
+];

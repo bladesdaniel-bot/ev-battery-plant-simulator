@@ -9,5 +9,5 @@
     "strictNullChecks": false,
     "ignoreDeprecations": "6.0"
   },
-  "files": ["../src/engine.ts", "../src/line1.ts", "sim.test.ts"]
+  "files": ["../src/engine.ts", "../src/line1.ts", "../src/line2.ts", "sim.test.ts"]
 }

@@ -155,7 +155,10 @@ class Line {
         P.log(`${this.unitName(p)} scrapped at ${s.name}: ${p.msg}`, 'warn', this); return true;
       case 'ship': this.recordOut(p); return true;
       case 'export': {
-        const c = P.connection(d.out.export), t = P.station(c.toLine, c.toStation);
+        const c = P.connection(d.out.export);
+        if (!c) { this.recordOut(p); return true; } // not connected (line run on its own): ship it
+        const t = P.station(c.toLine, c.toStation);
+
         if (t.buf.length >= t.qcap) return false;
         this.recordOut(p); p.route = null; p.rw = false; t.buf.push(p); return true;
       }

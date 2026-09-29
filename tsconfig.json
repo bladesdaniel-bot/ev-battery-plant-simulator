@@ -1,15 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "none",
-    "rootDir": "src",
-    "outFile": "build/app.js",
-    "strict": true,
-    "strictNullChecks": false,
-    "strictPropertyInitialization": false,
-    "noUnusedLocals": true,
-    "ignoreDeprecations": "6.0"
+    "target": "ES2020", "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "none", "rootDir": "src", "outFile": "build/app.js",
+    "strict": true, "strictNullChecks": false, "strictPropertyInitialization": false,
+    "noUnusedLocals": true, "removeComments": false, "ignoreDeprecations": "6.0"
   },
-  "files": ["src/engine.ts", "src/line1.ts", "src/ui.ts"]
+  "files": ["src/engine.ts", "src/line1.ts", "src/line2.ts", "src/ui.ts"]
 }

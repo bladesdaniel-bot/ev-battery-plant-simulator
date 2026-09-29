@@ -145,11 +145,13 @@ function renderUI() {
   if (d.checkTimer) rows.push(['Open time limit', fmtDur(d.checkTimer.limit)]);
   $('#pStats').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
 
-  $('#tableTitle').textContent = `Stations, ${ln.def.short}`;
-  $('#tbody').innerHTML = ln.st.map((x, i) => `<tr data-i="${i}" aria-selected="${i === sel.si}" tabindex="0">
+  // Every line's stations, grouped under a header row for each line.
+  $('#tbody').innerHTML = plant.lines.map((l, li) => `<tr class="grp"><th colspan="4">${esc(l.def.name)}</th></tr>` + l.st.map((x, i) => {
+    const on = li === sel.li && i === sel.si;
+    return `<tr data-li="${li}" data-i="${i}" aria-selected="${on}" tabindex="0">
     <td>${esc(x.name)}</td><td class="state ${stateClass(x)}">${stateLabel(x)}</td>
-    <td class="num${x.effCycle > T ? ' over' : ''}">${x.effCycle} s</td><td class="num">${plant.t > 60 ? pct(ln.oee(x).O) : '—'}</td></tr>`).join('');
-
+    <td class="num${x.effCycle > T ? ' over' : ''}">${x.effCycle} s</td><td class="num">${plant.t > 60 ? pct(l.oee(x).O) : '—'}</td></tr>`;
+  }).join('')).join('');
   const multi = plant.lines.length > 1;
   // Root causes are stops that start at a station. Knock-on effects are the starved/blocked time they cause elsewhere.
   type Loss = { k: string; v: number; c: string };
@@ -185,8 +187,8 @@ function renderUI() {
 function select(li: number, si: number) { sel = { li, si }; renderUI(); updateLine(); }
 function refresh() { renderUI(); updateLine(); }
 
-$('#tbody').addEventListener('click', e => { const tr = (e.target as HTMLElement).closest('tr'); if (tr) select(sel.li, +tr.dataset.i); });
-$('#tbody').addEventListener('keydown', e => { const t = e.target as HTMLElement; if ((e.key === 'Enter' || e.key === ' ') && t.dataset.i) { e.preventDefault(); select(sel.li, +t.dataset.i); } });
+$('#tbody').addEventListener('click', e => { const tr = (e.target as HTMLElement).closest('tr'); if (tr && tr.dataset.i) select(+tr.dataset.li, +tr.dataset.i); });
+$('#tbody').addEventListener('keydown', e => { const t = e.target as HTMLElement; if ((e.key === 'Enter' || e.key === ' ') && t.dataset.i) { e.preventDefault(); select(+t.dataset.li, +t.dataset.i); } });
 $('#runBtn').onclick = () => { running = !running; renderUI(); };
 document.querySelectorAll<HTMLElement>('[data-speed]').forEach(b => b.onclick = () => { speed = +b.dataset.speed; renderUI(); });
 ($('#randFaults') as HTMLInputElement).onchange = e => { plant.randomFaults = (e.target as HTMLInputElement).checked; plant.log(plant.randomFaults ? 'Random faults on' : 'Random faults off'); };

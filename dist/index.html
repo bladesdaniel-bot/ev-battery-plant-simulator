@@ -140,6 +140,8 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 th{text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--rule);padding:6px 8px}
 td{padding:7px 8px;border-bottom:1px solid var(--rule);white-space:nowrap}
 tbody tr{cursor:pointer}
+tbody tr.grp{cursor:default}
+tr.grp th{color:var(--ink);font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:17px;padding-top:14px}
 tbody tr[aria-selected="true"] td{background:color-mix(in srgb,var(--sel) 14%,transparent)}
 td.num,th.num{text-align:right}
 .over{color:var(--warn);font-weight:600}
@@ -434,7 +436,12 @@ class Line {
                 this.recordOut(p);
                 return true;
             case 'export': {
-                const c = P.connection(d.out.export), t = P.station(c.toLine, c.toStation);
+                const c = P.connection(d.out.export);
+                if (!c) {
+                    this.recordOut(p);
+                    return true;
+                } // not connected (line run on its own): ship it
+                const t = P.station(c.toLine, c.toStation);
                 if (t.buf.length >= t.qcap)
                     return false;
                 this.recordOut(p);
@@ -572,7 +579,7 @@ class Plant {
 function fmt(t) { t = Math.max(0, Math.floor(t)); const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60; return [h, m, s].map(n => String(n).padStart(2, '0')).join(':'); }
 function fmtDur(s) { s = Math.round(s); return s >= 60 ? `${Math.floor(s / 60)} min${s % 60 ? ' ' + (s % 60) + ' s' : ''}` : `${s} s`; }
 function pct(x) { return (x * 100).toFixed(1) + '%'; }
-// Line 1: battery pack assembly. Line 2 gets its own file and a ConnectionDef in PLANT_CONNECTIONS.
+// Line 1: battery pack assembly. Finished packs go to Line 2 (see line2.ts).
 const LINE1 = {
     id: 'line1', short: 'L1', name: 'Line 1: Battery pack assembly',
     unitNames: { M: 'Module', P: 'Pack' }, finalPrefix: 'P', idealCycle: 34,
@@ -614,11 +621,58 @@ const LINE1 = {
         { id: 'eol', lane: 2, name: 'End-of-line test', ct: 28, out: { to: 'pack' },
             inspect: { tag: 'sealLeak', reworkTo: 'glue', reworkShare: 0.8, reworkMsg: 'seal leak, sent back to Adhesive dispense', scrapMsg: 'seal leak not repairable' },
             role: 'Leak and electrical test. Seal failures go back to Adhesive dispense.' },
-        { id: 'pack', lane: 2, name: 'Pack out', ct: 20, out: { ship: true }, role: 'Finished packs leave the line. When Line 2 is added, this feeds it.' },
+        { id: 'pack', lane: 2, name: 'Pack out', ct: 20, out: { export: 'l1-l2' }, role: 'Sends finished packs to Line 2.' },
     ],
 };
-const PLANT_LINES = [LINE1];
-const PLANT_CONNECTIONS = [];
+// Line 2: pack finishing and vehicle integration. Receives finished packs from Line 1.
+const LINE2 = {
+    id: 'line2', short: 'L2', name: 'Line 2: Pack finishing and vehicle integration',
+    unitNames: { P: 'Pack', V: 'Vehicle' }, finalPrefix: 'V', idealCycle: 33,
+    components: {
+        harness: { label: 'HV harnesses', cap: 6 },
+        pack: { label: 'Packs', cap: 4 },
+        fasteners: { label: 'Fastener kits', cap: 6 },
+    },
+    lanes: [
+        { name: 'Pack finishing', note: 'Packs from Line 1 get their high-voltage harness and battery software, then a charge and discharge test and a final inspection.' },
+        { name: 'Component feeders', note: 'HV harnesses and fastener kits are kitted and delivered to their stations.', feeders: true },
+        { name: 'Vehicle integration', note: 'Each chassis gets a finished pack bolted underneath, HV and coolant lines connected, coolant filled, then a function check.' },
+    ],
+    stations: [
+        { id: 'receive', lane: 0, name: 'Pack receive', ct: 20, out: { to: 'harness' }, role: 'Takes finished packs from the Line 1 transfer buffer.' },
+        { id: 'harness', lane: 0, name: 'HV harness install', ct: 30, needs: { harness: 1 }, out: { to: 'bms' },
+            introduce: { tag: 'hvConnect', rate: 0.012, firstPassOnly: true },
+            role: 'Fits the high-voltage harness and connectors. About 1% of connections are not fully seated.' },
+        { id: 'bms', lane: 0, name: 'BMS flash', ct: 24, out: { to: 'cdtest' },
+            introduce: { tag: 'flashFail', rate: 0.01, firstPassOnly: true },
+            inspect: { tag: 'flashFail', reworkTo: 'bms', reworkShare: 1, reworkMsg: 'software flash failed, retrying', scrapMsg: 'flash failed' },
+            role: 'Loads the battery management software. A failed flash is retried.' },
+        { id: 'cdtest', lane: 0, name: 'Charge and discharge test', ct: 33, out: { to: 'final' },
+            inspect: { tag: 'hvConnect', reworkTo: 'harness', reworkShare: 0.75, reworkMsg: 'HV connection fault, sent back to HV harness install', scrapMsg: 'HV fault not repairable' },
+            role: 'Cycles the pack and checks the HV connections. Faults go back to HV harness install.' },
+        { id: 'final', lane: 0, name: 'Final inspection', ct: 22, out: { to: 'marry', comp: 'pack' },
+            role: 'Visual and label check. Finished packs go to Pack marriage.' },
+        { id: 'fharness', lane: 1, name: 'HV harness feed', ct: 25, src: {}, out: { to: 'harness', comp: 'harness' }, role: 'Delivers HV harnesses to HV harness install.' },
+        { id: 'ffast', lane: 1, name: 'Fastener kit feed', ct: 25, src: {}, out: { to: 'marry', comp: 'fasteners' }, role: 'Delivers fastener kits to Pack marriage.' },
+        { id: 'chassis', lane: 2, name: 'Chassis load', ct: 22, src: { prefix: 'V' }, out: { to: 'marry' }, role: 'Starts a new vehicle on the line.' },
+        { id: 'marry', lane: 2, name: 'Pack marriage', ct: 32, robot: true, needs: { pack: 1, fasteners: 1 }, out: { to: 'connect' },
+            role: 'Lifts the pack into the underbody and torques the bolts.' },
+        { id: 'connect', lane: 2, name: 'HV and coolant connect', ct: 28, out: { to: 'fill' },
+            introduce: { tag: 'coolantLeak', rate: 0.012, firstPassOnly: true },
+            role: 'Connects the HV lines and coolant hoses to the pack.' },
+        { id: 'fill', lane: 2, name: 'Coolant fill', ct: 26, robot: true, out: { to: 'fcheck' },
+            consumable: { label: 'Coolant tote', capacity: 120, perCycle: 1, changeTime: 180, warnAt: 0.15 },
+            role: 'Fills the pack cooling loop. When the tote is empty, the station stops until a tech changes it.' },
+        { id: 'fcheck', lane: 2, name: 'Vehicle function check', ct: 30, out: { to: 'vout' },
+            inspect: { tag: 'coolantLeak', reworkTo: 'connect', reworkShare: 0.8, reworkMsg: 'coolant leak, sent back to HV and coolant connect', scrapMsg: 'leak not repairable on the line' },
+            role: 'Powers up the vehicle and checks for leaks. Leaks go back to HV and coolant connect.' },
+        { id: 'vout', lane: 2, name: 'Vehicle out', ct: 20, out: { ship: true }, role: 'Finished vehicles leave the line.' },
+    ],
+};
+const PLANT_LINES = [LINE1, LINE2];
+const PLANT_CONNECTIONS = [
+    { id: 'l1-l2', label: 'Pack transfer, Line 1 to Line 2', fromLine: 'line1', toLine: 'line2', toStation: 'receive', capacity: 8 },
+];
 // Dashboard: renders every line in the plant, a station panel, stations table, lost-time Pareto and event log.
 const $ = (s) => document.querySelector(s);
 let plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS);
@@ -814,10 +868,13 @@ function renderUI() {
     if (d.checkTimer)
         rows.push(['Open time limit', fmtDur(d.checkTimer.limit)]);
     $('#pStats').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
-    $('#tableTitle').textContent = `Stations, ${ln.def.short}`;
-    $('#tbody').innerHTML = ln.st.map((x, i) => `<tr data-i="${i}" aria-selected="${i === sel.si}" tabindex="0">
+    // Every line's stations, grouped under a header row for each line.
+    $('#tbody').innerHTML = plant.lines.map((l, li) => `<tr class="grp"><th colspan="4">${esc(l.def.name)}</th></tr>` + l.st.map((x, i) => {
+        const on = li === sel.li && i === sel.si;
+        return `<tr data-li="${li}" data-i="${i}" aria-selected="${on}" tabindex="0">
     <td>${esc(x.name)}</td><td class="state ${stateClass(x)}">${stateLabel(x)}</td>
-    <td class="num${x.effCycle > T ? ' over' : ''}">${x.effCycle} s</td><td class="num">${plant.t > 60 ? pct(ln.oee(x).O) : '—'}</td></tr>`).join('');
+    <td class="num${x.effCycle > T ? ' over' : ''}">${x.effCycle} s</td><td class="num">${plant.t > 60 ? pct(l.oee(x).O) : '—'}</td></tr>`;
+    }).join('')).join('');
     const multi = plant.lines.length > 1;
     const causes = [], effects = [];
     plant.lines.forEach(l => l.st.forEach(x => {
@@ -854,11 +911,11 @@ function renderUI() {
 }
 function select(li, si) { sel = { li, si }; renderUI(); updateLine(); }
 function refresh() { renderUI(); updateLine(); }
-$('#tbody').addEventListener('click', e => { const tr = e.target.closest('tr'); if (tr)
-    select(sel.li, +tr.dataset.i); });
+$('#tbody').addEventListener('click', e => { const tr = e.target.closest('tr'); if (tr && tr.dataset.i)
+    select(+tr.dataset.li, +tr.dataset.i); });
 $('#tbody').addEventListener('keydown', e => { const t = e.target; if ((e.key === 'Enter' || e.key === ' ') && t.dataset.i) {
     e.preventDefault();
-    select(sel.li, +t.dataset.i);
+    select(+t.dataset.li, +t.dataset.i);
 } });
 $('#runBtn').onclick = () => { running = !running; renderUI(); };
 document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { speed = +b.dataset.speed; renderUI(); });

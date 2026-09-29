@@ -1,4 +1,4 @@
-// Line 1: battery pack assembly. Line 2 gets its own file and a ConnectionDef in PLANT_CONNECTIONS.
+// Line 1: battery pack assembly. Finished packs go to Line 2 (see line2.ts).
 const LINE1: LineDef = {
   id: 'line1', short: 'L1', name: 'Line 1: Battery pack assembly',
   unitNames: { M: 'Module', P: 'Pack' }, finalPrefix: 'P', idealCycle: 34,
@@ -40,9 +40,7 @@ const LINE1: LineDef = {
     { id: 'eol', lane: 2, name: 'End-of-line test', ct: 28, out: { to: 'pack' },
       inspect: { tag: 'sealLeak', reworkTo: 'glue', reworkShare: 0.8, reworkMsg: 'seal leak, sent back to Adhesive dispense', scrapMsg: 'seal leak not repairable' },
       role: 'Leak and electrical test. Seal failures go back to Adhesive dispense.' },
-    { id: 'pack', lane: 2, name: 'Pack out', ct: 20, out: { ship: true }, role: 'Finished packs leave the line. When Line 2 is added, this feeds it.' },
+    { id: 'pack', lane: 2, name: 'Pack out', ct: 20, out: { export: 'l1-l2' }, role: 'Sends finished packs to Line 2.' },
   ],
 };
 
-const PLANT_LINES: LineDef[] = [LINE1];
-const PLANT_CONNECTIONS: ConnectionDef[] = [];
