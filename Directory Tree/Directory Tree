@@ -15,6 +15,9 @@ EV battery plant simulator/
 │   ├── sim.test.ts       # headless tests for all three lines and the transfers
 │   └── tsconfig.json     # compiler settings for the tests
 ├── dist/
-│   └── index.html        # built simulator (open this in a browser)
+│   ├── index.html        # built simulator (open this in a browser)
+│   └── index.zip         # zipped copy of the built simulator
+├── EV Battery Plant Demo Video/
+│   └── Ev-Battery-Demo-Video.mp4   # screen recording of the simulator running
 └── Directory Tree/
     └── Directory Tree    # this annotated project tree
