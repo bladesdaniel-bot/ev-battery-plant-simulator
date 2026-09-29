@@ -1,5 +1,7 @@
 # EV battery plant simulator
 
+**Demo video:** [Watch the simulator running](EV%20Battery%20Plant%20Demo%20Video/Ev-Battery-Demo-Video.mp4)
+
 A config-driven production plant simulator with a live dashboard. Three connected
 lines run on the same simulated clock:
 
