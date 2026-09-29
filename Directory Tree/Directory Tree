@@ -1,18 +1,20 @@
 production line ready demonstration/
 ├── .gitignore            # keeps node_modules/ and build/ out of Git
-├── README.md             # overview, build steps, how to add Line 2
+├── README.md             # overview, build steps, how to add another line
 ├── package.json          # npm scripts (build, test) and TypeScript version
 ├── tsconfig.json         # compiler settings for the app
 ├── build.js              # compiles, runs tests, writes dist/index.html
 ├── src/
 │   ├── engine.ts         # simulation core: Station, Line, Plant
 │   ├── line1.ts          # Line 1 station layout (config data)
+│   ├── line2.ts          # Line 2 station layout, plant line list and connection
 │   ├── ui.ts             # dashboard rendering and controls
 │   └── index.html        # page shell the build inlines the app into
 ├── test/
-│   ├── sim.test.ts       # headless tests, incl. stub Line 2 connection
+│   ├── sim.test.ts       # headless tests for both lines and the transfer
 │   └── tsconfig.json     # compiler settings for the tests
 ├── dist/
 │   └── index.html        # built simulator (open this in a browser)
 └── Directory Tree/
     └── Directory Tree    # this annotated project tree
+    └── Directory Tree    # this annotated project tree                     ← edit
