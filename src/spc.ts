@@ -2,6 +2,7 @@
 // 1. Forwards every measurement reading to the monitor.
 // 2. Sends each measured station's spec limits, so the monitor can calculate capability.
 // 3. While Auto is on, watches the monitor for new rule violations and dispatches the auto crew.
+// 4. Clears the simulator's own series on the monitor when a new shift starts.
 const SPC_BASE = 'http://localhost:8090';
 const SPC_RETRY_MS = 10000;  // pause after a failed request (monitor not running)
 const SPC_POLL_MS = 3000;    // how often the crew checks the monitor for alerts
@@ -25,17 +26,34 @@ function connectSpc(p: Plant) {
   spcSendSpecs(p);
 }
 
+// Every measured station, with the series name the monitor knows it by (e.g. "L1-weld").
+function spcMeasured(p: Plant) {
+  const out: { name: string; M: MeasureDef }[] = [];
+  for (const ln of p.lines) for (const s of ln.st) {
+    if (s.def.measure) out.push({ name: `${ln.def.short}-${s.def.id}`, M: s.def.measure });
+  }
+  return out;
+}
+
 // Sends the spec limits of every measured station that has them.
 function spcSendSpecs(p: Plant) {
   if (Date.now() < spcPausedUntil) return;
-  for (const ln of p.lines) for (const s of ln.st) {
-    const M = s.def.measure;
-    if (!M || M.lsl == null || M.usl == null) continue;
+  for (const { name, M } of spcMeasured(p)) {
+    if (M.lsl == null || M.usl == null) continue;
     fetch(SPC_BASE + '/specs', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ station: `${ln.def.short}-${s.def.id}`, characteristic: M.char, lsl: M.lsl, usl: M.usl }),
+      body: JSON.stringify({ station: name, characteristic: M.char, lsl: M.lsl, usl: M.usl }),
     }).catch(() => { spcPausedUntil = Date.now() + SPC_RETRY_MS; });
+  }
+}
+
+// Clears only the simulator's own series on the monitor, so a new shift starts with fresh charts.
+function spcClearSeries(p: Plant) {
+  for (const { name, M } of spcMeasured(p)) {
+    delete spcHandledFrom[name + '|' + M.char];
+    const q = `station=${encodeURIComponent(name)}&characteristic=${encodeURIComponent(M.char)}`;
+    fetch(`${SPC_BASE}/series?${q}`, { method: 'DELETE' }).catch(() => { /* monitor not running */ });
   }
 }
 
@@ -48,6 +66,7 @@ async function spcPoll() {
       if (!s) continue;
       const key = sr.station + '|' + sr.characteristic;
       if (spcHandledFrom[key] == null) { spcHandledFrom[key] = sr.count; continue; } // skip history from before we watched
+      if (sr.count < spcHandledFrom[key] - SPC_GRACE) spcHandledFrom[key] = 0;      // series was cleared: watch it fresh
       if (s.fault > 0) continue; // crew already busy at this station
       const q = `station=${encodeURIComponent(sr.station)}&characteristic=${encodeURIComponent(sr.characteristic)}`;
       const r = await fetch(`${SPC_BASE}/violations?${q}`);

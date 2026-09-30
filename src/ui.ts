@@ -215,7 +215,7 @@ $('#serviceBtn').onclick = () => { const s = selStation(); s.line.service(s); re
 $('#consumeBtn').onclick = () => { const s = selStation(); s.line.changeConsumable(s); refresh(); };
 $('#resetBtn').onclick = () => {
   const rf = plant.randomFaults, tj = plant.targetJPH;
-  plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS); plant.randomFaults = rf; plant.targetJPH = tj; connectSpc(plant);
+  plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS); plant.randomFaults = rf; plant.targetJPH = tj; spcClearSeries(plant); connectSpc(plant);
   plant.log(`Shift started. Target ${tj}/hr.`); build(); logShown = -1; selShown = ''; refresh();
 };
 
