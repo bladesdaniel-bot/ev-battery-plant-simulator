@@ -1,9 +1,11 @@
 // Connects the simulator to the SPC monitor (spc-monitor, Go service).
 // 1. Forwards every measurement reading to the monitor.
-// 2. While Auto is on, watches the monitor for new rule violations and dispatches the auto crew.
+// 2. Sends each measured station's spec limits, so the monitor can calculate capability.
+// 3. While Auto is on, watches the monitor for new rule violations and dispatches the auto crew.
 const SPC_BASE = 'http://localhost:8090';
 const SPC_RETRY_MS = 10000;  // pause after a failed request (monitor not running)
 const SPC_POLL_MS = 3000;    // how often the crew checks the monitor for alerts
+const SPC_SPEC_MS = 15000;   // how often specs are re-sent (the monitor forgets them on restart)
 const SPC_GRACE = 8;         // readings to ignore after a fix, so the old pattern doesn't re-trigger
 let spcPausedUntil = 0;
 const spcHandledFrom: Dict<number> = {};
@@ -20,6 +22,21 @@ function connectSpc(p: Plant) {
       body: JSON.stringify({ station: m.station, characteristic: m.characteristic, value: m.value }),
     }).catch(() => { spcPausedUntil = Date.now() + SPC_RETRY_MS; });
   };
+  spcSendSpecs(p);
+}
+
+// Sends the spec limits of every measured station that has them.
+function spcSendSpecs(p: Plant) {
+  if (Date.now() < spcPausedUntil) return;
+  for (const ln of p.lines) for (const s of ln.st) {
+    const M = s.def.measure;
+    if (!M || M.lsl == null || M.usl == null) continue;
+    fetch(SPC_BASE + '/specs', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ station: `${ln.def.short}-${s.def.id}`, characteristic: M.char, lsl: M.lsl, usl: M.usl }),
+    }).catch(() => { spcPausedUntil = Date.now() + SPC_RETRY_MS; });
+  }
 }
 
 async function spcPoll() {
@@ -64,3 +81,4 @@ function spcDispatch(s: Station, v: SpcViolation) {
 }
 
 setInterval(spcPoll, SPC_POLL_MS);
+setInterval(() => spcSendSpecs(plant), SPC_SPEC_MS);

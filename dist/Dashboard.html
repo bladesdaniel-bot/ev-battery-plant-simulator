@@ -643,7 +643,7 @@ const LINE1 = {
         { id: 'weld', lane: 0, name: 'Busbar weld', ct: 34, robot: true, out: { to: 'mcheck' },
             introduce: { tag: 'weldDefect', rate: 0.008, wearPerCycle: 0.00035, warnAt: 0.04, warnMsg: 'Weld defect risk above 4%. Clean the laser optics.' },
             service: { label: 'Clean laser optics', stop: 60, doneMsg: 'Laser optics cleaned, defect risk reset' },
-            measure: { char: 'weld_resistance_uohm', target: 50, sigma: 1, wearDrift: 0.03 },
+            measure: { char: 'weld_resistance_uohm', target: 50, sigma: 1, wearDrift: 0.03, lsl: 45, usl: 55 },
             role: 'Robot laser-welds busbars to the cells. Spatter builds up on the optics cover glass, so defect risk climbs until it is cleaned.' },
         { id: 'mcheck', lane: 0, name: 'Module check', ct: 22, out: { to: 'modinst', comp: 'module' },
             inspect: { tag: 'weldDefect', reworkTo: 'weld', reworkShare: 0.65, reworkMsg: 'weld defect, sent back to Busbar weld', scrapMsg: 'weld defect not repairable' },
@@ -656,7 +656,7 @@ const LINE1 = {
         { id: 'side', lane: 2, name: 'Side covers', ct: 28, needs: { side: 2 }, out: { to: 'glue' }, role: 'Fits two side covers per pack.' },
         { id: 'glue', lane: 2, name: 'Adhesive dispense', ct: 26, robot: true, out: { to: 'top' }, startTimer: 'adhesive',
             consumable: { label: 'Adhesive drum', capacity: 150, perCycle: 1, changeTime: 180, warnAt: 0.15 },
-            measure: { char: 'bead_width_mm', target: 4.0, sigma: 0.03, lowLevelDrift: -0.12 },
+            measure: { char: 'bead_width_mm', target: 4.0, sigma: 0.03, lowLevelDrift: -0.12, lsl: 3.85, usl: 4.15 },
             role: 'Robot dispenses the seal bead. The top plate must go on within 5 minutes or the pack is re-glued.' },
         { id: 'top', lane: 2, name: 'Top plate install', ct: 32, robot: true, needs: { top: 1 }, out: { to: 'eol' },
             checkTimer: { timer: 'adhesive', limit: 300, reworkTo: 'glue', msg: 'adhesive open time exceeded' },
@@ -761,10 +761,12 @@ const PLANT_CONNECTIONS = [
 ];
 // Connects the simulator to the SPC monitor (spc-monitor, Go service).
 // 1. Forwards every measurement reading to the monitor.
-// 2. While Auto is on, watches the monitor for new rule violations and dispatches the auto crew.
+// 2. Sends each measured station's spec limits, so the monitor can calculate capability.
+// 3. While Auto is on, watches the monitor for new rule violations and dispatches the auto crew.
 const SPC_BASE = 'http://localhost:8090';
 const SPC_RETRY_MS = 10000; // pause after a failed request (monitor not running)
 const SPC_POLL_MS = 3000; // how often the crew checks the monitor for alerts
+const SPC_SPEC_MS = 15000; // how often specs are re-sent (the monitor forgets them on restart)
 const SPC_GRACE = 8; // readings to ignore after a fix, so the old pattern doesn't re-trigger
 let spcPausedUntil = 0;
 const spcHandledFrom = {};
@@ -778,6 +780,23 @@ function connectSpc(p) {
             body: JSON.stringify({ station: m.station, characteristic: m.characteristic, value: m.value }),
         }).catch(() => { spcPausedUntil = Date.now() + SPC_RETRY_MS; });
     };
+    spcSendSpecs(p);
+}
+// Sends the spec limits of every measured station that has them.
+function spcSendSpecs(p) {
+    if (Date.now() < spcPausedUntil)
+        return;
+    for (const ln of p.lines)
+        for (const s of ln.st) {
+            const M = s.def.measure;
+            if (!M || M.lsl == null || M.usl == null)
+                continue;
+            fetch(SPC_BASE + '/specs', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ station: `${ln.def.short}-${s.def.id}`, characteristic: M.char, lsl: M.lsl, usl: M.usl }),
+            }).catch(() => { spcPausedUntil = Date.now() + SPC_RETRY_MS; });
+        }
 }
 async function spcPoll() {
     if (!autoOn || Date.now() < spcPausedUntil)
@@ -830,6 +849,7 @@ function spcDispatch(s, v) {
         plant.log(`Crew found no assignable cause at ${s.name}. Likely a false alarm.`, '', ln);
 }
 setInterval(spcPoll, SPC_POLL_MS);
+setInterval(() => spcSendSpecs(plant), SPC_SPEC_MS);
 // Auto crew: runs the whole plant hands-free when Auto is on.
 const AUTO_RESPONSE = 45; // seconds for the crew to reach a breakdown and get it running
 const AUTO_MIN_CT = 0.85; // stations can be sped up to 85% of their design cycle, no further

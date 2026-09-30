@@ -10,7 +10,7 @@ interface InspectDef { tag: string; reworkTo?: string; reworkShare: number; rewo
 interface TimerCheckDef { timer: string; limit: number; reworkTo: string; msg: string }
 interface ConsumableDef { label: string; capacity: number; perCycle: number; changeTime: number; warnAt: number }
 interface ServiceDef { label: string; stop: number; doneMsg: string }
-interface MeasureDef { char: string; target: number; sigma: number; wearDrift?: number; lowLevelDrift?: number }
+interface MeasureDef { char: string; target: number; sigma: number; wearDrift?: number; lowLevelDrift?: number; lsl?: number; usl?: number }
 
 interface StationDef {
   id: string; lane: number; name: string; ct: number; robot?: boolean; role?: string;
