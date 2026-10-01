@@ -58,6 +58,40 @@ investigating, fix applied, and the chart returning to normal.
 The simulator runs fine on its own too. If the monitor isn't running, readings
 are simply skipped and it reconnects automatically once the monitor starts.
 
+## Vision inspector (in progress)
+
+The `vision-inspector` folder adds an AI visual inspection station: a model
+that learns what good parts look like and flags anything different, with a
+heatmap showing where the defect is.
+
+It uses PatchCore (via anomalib), trained only on good parts, the way real
+inspection works when defects are rare. Results on the metal nut category of
+the public MVTec AD dataset, trained on CPU in about 20 minutes:
+
+| Metric      | Score |
+|-------------|-------|
+| Image AUROC | 0.998 |
+| Image F1    | 0.989 |
+| Pixel AUROC | 0.987 |
+| Pixel F1    | 0.840 |
+
+Next: an inspection station in the simulator, a live inspection panel with
+heatmaps in the dashboard, and a percent-defective p-chart in the SPC monitor.
+
+### Running it
+
+Requires Python (tested on 3.14). From the `vision-inspector` folder:
+
+    python -m venv .venv
+    .venv\Scripts\Activate.ps1
+    pip install -r requirements.txt
+    python download.py    # downloads MVTec AD (about 5 GB) into datasets/
+    python train.py       # trains the model and prints test scores
+
+The dataset is not included in this repo. MVTec AD is licensed for
+non-commercial use under CC BY-NC-SA 4.0; see
+https://www.mvtec.com/company/research/datasets/mvtec-ad
+
 ## Layout
 
 - `src/engine.ts`: simulation engine (`Station`, `Line`, `Plant`). Fixed-step and
@@ -73,6 +107,7 @@ are simply skipped and it reconnects automatically once the monitor starts.
 - `src/ui.ts`: dashboard; renders any number of lines from their definitions.
 - `test/sim.test.ts`: headless checks for each line and for the connections between them.
 - `src/index.html`: page shell; the build inlines the compiled app into it.
+- `vision-inspector/`: Python defect-detection model (PatchCore via anomalib); see Vision inspector above.
 
 Full annotated tree: [Directory Tree](Directory%20Tree/Directory%20Tree)
 
