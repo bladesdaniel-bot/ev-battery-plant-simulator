@@ -11,3 +11,7 @@ npm-debug.log*
 Thumbs.db
 desktop.ini
 .vs/
+.venv/
+datasets/
+datasets/
+results/
