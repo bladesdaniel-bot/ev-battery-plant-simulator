@@ -16,3 +16,4 @@ datasets/
 datasets/
 results/
 export/
+__pycache__/
