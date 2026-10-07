@@ -11,6 +11,7 @@ interface TimerCheckDef { timer: string; limit: number; reworkTo: string; msg: s
 interface ConsumableDef { label: string; capacity: number; perCycle: number; changeTime: number; warnAt: number }
 interface ServiceDef { label: string; stop: number; doneMsg: string }
 interface MeasureDef { char: string; target: number; sigma: number; wearDrift?: number; lowLevelDrift?: number; lsl?: number; usl?: number }
+interface VisionDef { label: string }
 
 interface StationDef {
   id: string; lane: number; name: string; ct: number; robot?: boolean; role?: string;
@@ -25,6 +26,7 @@ interface StationDef {
   consumable?: ConsumableDef;         // e.g. adhesive drum
   service?: ServiceDef;               // e.g. clean laser optics (resets wear)
   measure?: MeasureDef;               // reports a measured value each cycle (for SPC)
+  vision?: VisionDef;                 // vision camera: reports each finished part to the inspector
 }
 interface LaneDef { name: string; note: string; feeders?: boolean }
 interface LineDef {
@@ -41,6 +43,7 @@ interface Part {
 }
 interface LogEntry { t: number; msg: string; kind: string; line?: string }
 interface MeasurementEvent { station: string; characteristic: string; value: number; simTime: number }
+interface VisionEvent { station: string; part: string; simTime: number }
 
 const QUEUE_CAP = 6, REWORK_CAP = 3;
 const DRIFT_RATE = 0.08;   // hidden drift, in sigmas per cycle
@@ -156,6 +159,7 @@ class Line {
       const value = Math.round((mean + noise * M.sigma) * 1000) / 1000;
       P.onMeasure({ station: `${this.def.short}-${d.id}`, characteristic: M.char, value, simTime: P.t });
     }
+    if (d.vision && P.onVision) P.onVision({ station: `${this.def.short}-${d.id}`, part: p.id || '', simTime: P.t });
     const X = d.inspect;
     if (X && p.tags[X.tag]) {
       if (X.reworkTo && P.rand() < X.reworkShare) { p.route = 'rework'; p.back = X.reworkTo; p.msg = X.reworkMsg; }
@@ -256,6 +260,7 @@ class Plant {
   randomFaults = true; targetJPH = 100;
   rand: () => number = Math.random;
   onMeasure: ((m: MeasurementEvent) => void) | null = null; // set by the UI to forward readings to the SPC monitor
+  onVision: ((v: VisionEvent) => void) | null = null; // set by the UI to send parts to the vision inspector
   constructor(defs: LineDef[], public connections: ConnectionDef[] = []) {
     this.lines = defs.map(d => new Line(d, this));
     this.lines.forEach(l => this.byId[l.def.id] = l);
