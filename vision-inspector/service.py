@@ -30,6 +30,8 @@ model = Patchcore(visualizer=False)
 engine = Engine()
 lock = threading.Lock()  # one inspection at a time
 images = sorted(TEST_DIR.rglob("*.png"))
+good_images = [p for p in images if p.parent.name == "good"]
+defect_images = [p for p in images if p.parent.name != "good"]
 
 
 def score_image(path: Path, load_weights: bool = False):
@@ -71,11 +73,15 @@ def health():
 
 
 @app.get("/inspect")
-def inspect(image: str | None = None):
+def inspect(image: str | None = None, kind: str | None = None):
     if image:
         path = TEST_DIR / image
         if path.resolve().parent.parent != TEST_DIR.resolve() or not path.is_file():
             raise HTTPException(404, f"No test image named {image}")
+    elif kind == "good":
+        path = random.choice(good_images)
+    elif kind == "defect":
+        path = random.choice(defect_images)
     else:
         path = random.choice(images)
 
