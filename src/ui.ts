@@ -2,6 +2,7 @@
 const $ = (s: string) => document.querySelector(s) as HTMLElement;
 let plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS);
 connectSpc(plant);
+connectVision(plant);
 let running = true, speed = 10, autoOn = false;
 let sel = { li: 0, si: plant.lines[0].st.findIndex(s => s.id === 'glue') };
 let selShown = '', logShown = -1;
@@ -215,7 +216,7 @@ $('#serviceBtn').onclick = () => { const s = selStation(); s.line.service(s); re
 $('#consumeBtn').onclick = () => { const s = selStation(); s.line.changeConsumable(s); refresh(); };
 $('#resetBtn').onclick = () => {
   const rf = plant.randomFaults, tj = plant.targetJPH;
-  plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS); plant.randomFaults = rf; plant.targetJPH = tj; spcClearSeries(plant); connectSpc(plant);
+  plant = new Plant(PLANT_LINES, PLANT_CONNECTIONS); plant.randomFaults = rf; plant.targetJPH = tj; spcClearSeries(plant); connectSpc(plant); visionReset(); connectVision(plant);
   plant.log(`Shift started. Target ${tj}/hr.`); build(); logShown = -1; selShown = ''; refresh();
 };
 
