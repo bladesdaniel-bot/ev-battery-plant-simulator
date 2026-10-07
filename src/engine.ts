@@ -11,7 +11,7 @@ interface TimerCheckDef { timer: string; limit: number; reworkTo: string; msg: s
 interface ConsumableDef { label: string; capacity: number; perCycle: number; changeTime: number; warnAt: number }
 interface ServiceDef { label: string; stop: number; doneMsg: string }
 interface MeasureDef { char: string; target: number; sigma: number; wearDrift?: number; lowLevelDrift?: number; lsl?: number; usl?: number }
-interface VisionDef { label: string }
+interface VisionDef { label: string; tag?: string } // tag: the defect this camera can see
 
 interface StationDef {
   id: string; lane: number; name: string; ct: number; robot?: boolean; role?: string;
@@ -43,7 +43,7 @@ interface Part {
 }
 interface LogEntry { t: number; msg: string; kind: string; line?: string }
 interface MeasurementEvent { station: string; characteristic: string; value: number; simTime: number }
-interface VisionEvent { station: string; part: string; simTime: number }
+interface VisionEvent { station: string; part: string; simTime: number; defect: boolean }
 
 const QUEUE_CAP = 6, REWORK_CAP = 3;
 const DRIFT_RATE = 0.08;   // hidden drift, in sigmas per cycle
@@ -159,7 +159,7 @@ class Line {
       const value = Math.round((mean + noise * M.sigma) * 1000) / 1000;
       P.onMeasure({ station: `${this.def.short}-${d.id}`, characteristic: M.char, value, simTime: P.t });
     }
-    if (d.vision && P.onVision) P.onVision({ station: `${this.def.short}-${d.id}`, part: p.id || '', simTime: P.t });
+    if (d.vision && P.onVision) P.onVision({ station: `${this.def.short}-${d.id}`, part: p.id || '', simTime: P.t, defect: !!(d.vision.tag && p.tags[d.vision.tag]) });
     const X = d.inspect;
     if (X && p.tags[X.tag]) {
       if (X.reworkTo && P.rand() < X.reworkShare) { p.route = 'rework'; p.back = X.reworkTo; p.msg = X.reworkMsg; }
