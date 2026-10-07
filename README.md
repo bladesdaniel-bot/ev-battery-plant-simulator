@@ -58,7 +58,20 @@ investigating, fix applied, and the chart returning to normal.
 The simulator runs fine on its own too. If the monitor isn't running, readings
 are simply skipped and it reconnects automatically once the monitor starts.
 
-## Vision inspector (in progress)
+### Running all three together
+
+The plant can also run with the AI vision inspector (see Vision inspector below).
+Each service runs in its own terminal:
+
+1. **SPC monitor** (port 8090), from the spc-monitor folder: `go run ./cmd/spc-monitor`
+2. **Vision inspector** (port 8091), from the `vision-inspector` folder:
+   `.venv\Scripts\python.exe service.py`
+3. **Simulator:** build and open `dist/Dashboard.html` (see Build below).
+
+Each service is optional. The plant keeps running if either one is down and
+reconnects when it comes back.
+
+## Vision inspector
 
 The `vision-inspector` folder adds an AI visual inspection station: a model
 that learns what good parts look like and flags anything different, with a
@@ -75,8 +88,43 @@ the public MVTec AD dataset, trained on CPU in about 20 minutes:
 | Pixel AUROC | 0.987 |
 | Pixel F1    | 0.840 |
 
-Next: an inspection station in the simulator, a live inspection panel with
-heatmaps in the dashboard, and a percent-defective p-chart in the SPC monitor.
+### PASS / REVIEW / REJECT band
+
+A single pass/fail threshold forces a tradeoff between escapes (defects that
+ship) and false rejects (good parts scrapped). Instead, the inspector uses a
+review band, the way automated inspection is run on real lines: the model makes
+the clear calls and routes uncertain parts to a human inspector.
+
+| Verdict (anomaly score)  | Good parts (22) | Defective parts (93) |
+|--------------------------|-----------------|----------------------|
+| PASS (below 0.35)        | 18              | 0                    |
+| REVIEW (0.35 to 0.55)    | 4               | 4                    |
+| REJECT (above 0.55)      | 0               | 89                   |
+
+Zero escapes and zero false rejects, with about 7% of parts sent to manual
+review. The band was chosen on the same 115 test parts it is scored on, so these
+results are optimistic; a real deployment would set the band on a separate batch.
+
+**Validated the deployment path.** Exporting the model to a standalone file
+changed its scores: one good part moved from 0.499 to 0.653, which would have
+been auto-rejected. The service instead runs the same in-memory pipeline that
+produced the results above (`check_pipeline.py` verifies the scores match
+exactly), at about 0.7 seconds per part on CPU.
+
+### In the plant
+
+A vision camera on Line 1 **Module check** sends each finished module to the
+inspection service (`src/vision.ts`). One inspection runs at a time, and modules
+that arrive while it is busy are skipped, like an audit camera sampling the line.
+Each module gets a photo that matches its real condition in the simulation:
+modules with a weld defect get a defective photo, good modules get a good one.
+
+The dashboard's **Vision inspection** panel shows the latest photo and heatmap,
+the score and verdict, whether the AI agreed with the plant, and running totals.
+REVIEW and REJECT results also appear in the event log.
+
+The camera reports results but does not route parts, so the simulation stays
+deterministic and every test result is unchanged with the inspector connected.
 
 ### Running it
 
@@ -85,8 +133,10 @@ Requires Python (tested on 3.14). From the `vision-inspector` folder:
     python -m venv .venv
     .venv\Scripts\Activate.ps1
     pip install -r requirements.txt
-    python download.py    # downloads MVTec AD (about 5 GB) into datasets/
-    python train.py       # trains the model and prints test scores
+    python download.py      # downloads MVTec AD (about 5 GB) into datasets/
+    python train.py         # trains the model and prints test scores
+    python band_report.py   # PASS / REVIEW / REJECT counts on the test set
+    python service.py       # starts the inspection service on port 8091
 
 The dataset is not included in this repo. MVTec AD is licensed for
 non-commercial use under CC BY-NC-SA 4.0; see
@@ -103,6 +153,8 @@ https://www.mvtec.com/company/research/datasets/mvtec-ad
 - `src/line3.ts`: Line 3 definition as data, plus `PLANT_LINES` and `PLANT_CONNECTIONS`.
 - `src/spc.ts`: SPC monitor connection. Sends readings and spec limits, and
   dispatches the auto crew on SPC alerts.
+- `src/vision.ts`: vision inspector connection. Sends camera events to the
+  inspection service, one at a time, and keeps results for the dashboard.
 - `src/auto.ts`: the auto crew (breakdowns, consumables, service, cycle times).
 - `src/ui.ts`: dashboard; renders any number of lines from their definitions.
 - `test/sim.test.ts`: headless checks for each line and for the connections between them.
@@ -147,7 +199,9 @@ scrap), `startTimer` / `checkTimer` (open-time limits), `consumable` (drums,
 totes; an empty one stops the station until a tech changes it), `service`
 (planned maintenance that resets drift, such as cleaning laser optics), and
 `measure` (reports a measured value each cycle, with a target, sigma, optional
-drift from wear or a low consumable, and spec limits).
+drift from wear or a low consumable, and spec limits). A `vision` setting adds a
+camera that reports each finished part to the vision inspector, with an optional
+defect tag it can see.
 
 ## Note
 

@@ -185,6 +185,66 @@ function renderUI() {
   $('#runBtn').textContent = running ? 'Pause' : 'Run';
   const ab = $('#autoBtn'); ab.textContent = autoOn ? 'Auto: on' : 'Auto: off'; ab.setAttribute('aria-pressed', String(autoOn));
   document.querySelectorAll<HTMLElement>('[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === speed)));
+  renderVision();
+}
+
+// ---- Vision inspection panel (results come from vision.ts) ----
+let visionShown = '';
+function buildVisionPanel() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .vision-panel{border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:12px 14px;margin:0 0 14px}
+    .vision-panel h2{font-size:1.05rem;margin:0}
+    .vi-sub{margin:2px 0 10px;opacity:.7;font-size:.8rem}
+    .vi-imgs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .vi-imgs figure{margin:0}
+    .vi-imgs img{width:100%;border-radius:6px;display:block}
+    .vi-imgs figcaption{font-size:.75rem;opacity:.7;margin-top:2px}
+    .vi-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:.85rem}
+    .vi-badge{font-weight:700;padding:2px 8px;border-radius:999px;color:#fff;font-size:.8rem}
+    .vi-badge.pass{background:#2e7d32}.vi-badge.review{background:#b26a00}.vi-badge.reject{background:#c62828}
+    .vi-counts{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px;text-align:center}
+    .vi-counts b{display:block;font-size:1.05rem}
+    .vi-counts span{font-size:.72rem;opacity:.7}
+    .vi-off{font-size:.85rem;opacity:.8}`;
+  document.head.appendChild(style);
+  const box = document.createElement('section');
+  box.className = 'vision-panel';
+  box.innerHTML = '<h2>Vision inspection</h2><p class="vi-sub">AI camera at L1 Module check (PatchCore anomaly detection)</p><div id="viBody"></div>';
+  const logCard = $('#log').parentElement;
+  logCard.parentElement.insertBefore(box, logCard);
+}
+function renderVision() {
+  const offline = Date.now() < visionPausedUntil;
+  const c = visionCounts, key = `${c.inspected}|${c.skipped}|${offline}`;
+  if (key === visionShown) return;
+  visionShown = key;
+  const r = visionLog[0];
+  let html = '';
+  if (offline) html += '<p class="vi-off">Inspector offline. Start it from the vision-inspector folder with <code>.venv\\Scripts\\python.exe service.py</code></p>';
+  if (!r && !offline) html += '<p class="vi-off">Waiting for the first module at the camera…</p>';
+  if (r) {
+    const v = ['PASS', 'REVIEW', 'REJECT'].indexOf(r.verdict) >= 0 ? r.verdict : 'REVIEW';
+    const bad = r.truth !== 'good';
+    const agreeTxt = v === 'REVIEW' ? 'sent to a human inspector' : ((v === 'REJECT') === bad ? 'AI agrees with the plant' : 'AI disagrees with the plant');
+    let agree = 0, review = 0, disagree = 0;
+    for (const x of visionLog) {
+      if (x.verdict === 'REVIEW') review++;
+      else if ((x.verdict === 'REJECT') === (x.truth !== 'good')) agree++;
+      else disagree++;
+    }
+    html += `<div class="vi-imgs">
+      <figure><img src="data:image/png;base64,${r.photo}" alt="Module photo"><figcaption>Photo</figcaption></figure>
+      <figure><img src="data:image/png;base64,${r.heatmap}" alt="Anomaly heatmap"><figcaption>Heatmap</figcaption></figure></div>
+      <div class="vi-row"><span class="vi-badge ${v.toLowerCase()}">${v}</span><span>Score ${r.score.toFixed(2)}</span><span>${esc(r.part || 'module')} at ${fmt(r.simTime)}</span></div>
+      <div class="vi-row">Plant: ${bad ? `weld defect (${esc(r.truth)} photo)` : 'good weld'}, ${agreeTxt}</div>
+      <div class="vi-row">Last ${visionLog.length}: ${agree} agree, ${review} to review, ${disagree} disagree</div>`;
+  }
+  html += `<div class="vi-counts">
+    <div><b>${c.inspected}</b><span>Inspected</span></div><div><b>${c.pass}</b><span>Pass</span></div>
+    <div><b>${c.review}</b><span>Review</span></div><div><b>${c.reject}</b><span>Reject</span></div>
+    <div><b>${c.skipped}</b><span>Skipped</span></div></div>`;
+  $('#viBody').innerHTML = html;
 }
 
 function select(li: number, si: number) { sel = { li, si }; renderUI(); updateLine(); }
@@ -229,5 +289,5 @@ function frame(now: number) {
   requestAnimationFrame(frame);
 }
 plant.log(`Shift started. Target ${plant.targetJPH}/hr.`);
-build(); refresh();
+buildVisionPanel(); build(); refresh();
 requestAnimationFrame(frame);
