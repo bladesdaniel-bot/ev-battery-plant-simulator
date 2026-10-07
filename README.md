@@ -1,6 +1,6 @@
 # EV battery plant simulator
 
-**Demo video:** [Watch the simulator running](EV%20Battery%20Plant%20Demo%20Video/Ev-Battery-Demo-Video.mp4)
+**Demo video:** [Watch the simulator running](EV%20Battery%20Plant%20Demo%20Video/Spc-%26-Production%20Line%20Monitor-Video.mp4)
 
 A config-driven production plant simulator with a live dashboard, connected to a real-time [SPC monitor](https://github.com/bladesdaniel-bot/spc-monitor) written in Go.
 
