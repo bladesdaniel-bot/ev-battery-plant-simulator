@@ -1,6 +1,8 @@
 ﻿aiohappyeyeballs==2.7.1
 aiohttp==3.14.3
 aiosignal==1.4.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
 anomalib==2.6.2
 antlr4-python3-runtime==4.9.3
 anyio==4.15.1
@@ -12,6 +14,7 @@ contourpy==1.4.0
 cycler==0.12.1
 docstring_parser==0.18.0
 einops==0.8.2
+fastapi==0.142.2
 filelock==4.0.8
 fonttools==4.66.1
 FrEIA==0.2
@@ -45,11 +48,14 @@ networkx==3.7
 numpy==2.5.3
 omegaconf==2.3.1
 opencv-python-headless==5.0.0.93
+opentelemetry-api==1.45.1
 packaging==26.3
 pandas==3.0.6
 pillow==12.3.0
 platformdirs==4.12.2
 propcache==0.5.4
+pydantic==2.13.5
+pydantic_core==2.46.5
 Pygments==2.21.0
 pyparsing==3.3.3
 python-dateutil==2.9.0.post0
@@ -63,6 +69,7 @@ scikit-learn==1.9.1
 scipy==1.18.1
 setuptools==84.0.0
 six==1.17.0
+starlette==1.7.0
 sympy==1.14.0
 threadpoolctl==3.7.0
 tifffile==2026.9.20
@@ -73,6 +80,8 @@ torchvision==0.29.1
 tqdm==4.70.1
 truststore==0.10.4
 typeshed_client==2.13.0
+typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.4
+uvicorn==0.54.0
 yarl==1.25.1
